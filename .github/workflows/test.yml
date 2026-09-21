@@ -15,6 +15,7 @@ jobs:
         shell: pwsh
         run: |
           Invoke-WebRequest https://www.renpy.org/dl/8.5.3/renpy-8.5.3-sdk.zip -OutFile "$env:RUNNER_TEMP/renpy.zip"
+          if ((Get-FileHash "$env:RUNNER_TEMP/renpy.zip" -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'ff57648f9c04f27e381c48af6d8e3ee3cdec296bed4d3831f47f09b0a71b505e') { throw 'RenPy SDK checksum mismatch' }
           Expand-Archive "$env:RUNNER_TEMP/renpy.zip" -DestinationPath ..
       - run: npm ci
       - run: npm test
