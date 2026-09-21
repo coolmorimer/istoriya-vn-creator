@@ -1,0 +1,78 @@
+{
+  "name": "vn-creator",
+  "version": "0.1.1",
+  "description": "Визуальный конструктор новелл на Ren'Py без программирования",
+  "author": "История",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "dev": "vite",
+    "desktop:dev": "concurrently -k \"vite --host 127.0.0.1 --port 4173 --strictPort\" \"wait-on http://127.0.0.1:4173 && cross-env ISTORIYA_DEV_URL=http://127.0.0.1:4173 electron .\"",
+    "desktop": "npm run build && electron .",
+    "desktop:dir": "npm run build && electron-builder --dir --win",
+    "desktop:package": "npm run build && electron-builder --win portable",
+    "installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
+    "build": "vite build && node scripts/prepare-sites-build.mjs",
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.mjs",
+    "test:sites": "node --test tests/sites-worker.test.mjs",
+    "compile:demo": "node scripts/compile-demo.mjs",
+    "verify:runtime": "node scripts/verify-advanced-runtime.mjs",
+    "build:demo:win": "node scripts/build-demo-win.mjs",
+    "build:demo:target": "node scripts/build-demo-target.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/cormorant-garamond": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "@vitejs/plugin-react": "5.0.4",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "vite": "6.4.2",
+    "zod": "^4.6.5",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3",
+    "wait-on": "^9.1.0"
+  },
+  "build": {
+    "appId": "ru.istoriya.vncreator",
+    "productName": "История",
+    "asar": true,
+    "directories": {
+      "output": "release-desktop"
+    },
+    "files": [
+      "dist/client/**/*",
+      "electron/**/*",
+      "runtime/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "public",
+        "to": "public"
+      },
+      {
+        "from": "../renpy-8.5.3-sdk",
+        "to": "renpy-sdk",
+        "filter": ["**/*", "!tmp/**", "!rapt/project/**", "!rapt/sdk.txt", "!**/saves/**", "!**/*.log", "!**/log.txt", "!**/traceback.txt", "!**/errors.txt", "!**/*.keystore", "!**/*.jks", "!**/local.properties", "!**/.DS_Store"]
+      },
+      {
+        "from": ".artifacts/notices",
+        "to": "licenses"
+      }
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "artifactName": "Istoriya-${version}-${arch}.${ext}"
+    }
+  }
+}

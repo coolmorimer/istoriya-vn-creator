@@ -1,0 +1,16 @@
+node_modules/
+dist/
+release*/
+.artifacts/
+output/
+.playwright*/
+*.log
+*.keystore
+*.jks
+*.vnproject
+.env
+.env.*
+!.env.example
+docs/audit/
+design/*.png
+*.tsbuildinfo

@@ -1,0 +1,21 @@
+name: Tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Download pinned RenPy SDK
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://www.renpy.org/dl/8.5.3/renpy-8.5.3-sdk.zip -OutFile "$env:RUNNER_TEMP/renpy.zip"
+          Expand-Archive "$env:RUNNER_TEMP/renpy.zip" -DestinationPath ..
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
