@@ -1,0 +1,25 @@
+.reaction-picker {width:min(760px,100%);display:flex;flex-direction:column;overflow:hidden;}
+.reaction-picker>header {flex:none;}
+.reaction-picker header p {margin-bottom:16px;}
+.reaction-picker form {display:flex;flex-direction:column;min-height:0;}
+.reaction-picker-body {min-height:0;overflow:auto;padding:2px 6px 4px 2px;display:flex;flex-direction:column;gap:20px;}
+.reaction-picker-row {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;}
+.reaction-picker .field {min-width:0;}
+.reaction-picker textarea {width:100%;padding:8px 10px;resize:vertical;min-height:64px;background:#11141d;color:#f7f2ff;border:1px solid #535367;border-radius:6px;font:inherit;font-size:14px;}
+.reaction-picker textarea::placeholder {color:#b7acc6;}
+.reaction-picker-body h3 {font-size:14px;margin:0 0 12px;}
+.reaction-item-fields {border:0;border-top:1px solid #41404e;padding:16px 0 0;margin:0;display:flex;flex-direction:column;gap:12px;min-width:0;}
+.reaction-item-fields legend {font-size:14px;padding:0 10px 0 0;color:#f0eafa;}
+.reaction-item-source,.reaction-lifecycle {display:flex;flex-wrap:wrap;gap:12px 24px;}
+.reaction-item-source label,.reaction-check {display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.5;}
+.reaction-picker input[type=checkbox],.reaction-picker input[type=radio] {accent-color:#b17aeb;width:17px;height:17px;flex:none;margin:2px 0 0;}
+.reaction-picker-body p {margin:0;}
+.reaction-reply-fields {display:flex;flex-direction:column;gap:12px;}
+.reaction-reply-fields h3 {margin-bottom:0;}
+.reaction-audio,.reaction-after {border-top:1px solid #41404e;padding-top:14px;}
+.reaction-picker summary {cursor:pointer;font-size:13px;color:#e6def1;}
+.reaction-picker details[open]>summary {margin-bottom:16px;}
+.reaction-after .rule-editor {margin-top:16px;}
+.reaction-picker footer {flex:none;margin-top:18px;display:flex;gap:10px;justify-content:flex-end;}
+.reaction-picker .character-author-error {margin:12px 0 0;max-height:100px;overflow:auto;}
+@media(max-width:650px) {.reaction-picker-row {grid-template-columns:minmax(0,1fr);}.reaction-picker {padding:18px;}.reaction-picker footer .button {font-size:12px;}}

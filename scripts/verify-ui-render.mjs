@@ -1,0 +1,13 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {pngPixels} from './qa-png.mjs';
+import {pixelRect} from '../runtime/game-ui.mjs';
+const gameRoot=path.resolve(process.argv[2]),project=JSON.parse(await fs.readFile('.artifacts/native-0212-ui/authored.vnproject','utf8'));
+const load=async name=>pngPixels(await fs.readFile(path.join(gameRoot,'tests/screenshots',name)));
+const dialogue=await load('ui-dialogue.png'),menu=await load('ui-menu.png'),w=dialogue.width,h=dialogue.height;
+const zone=pixelRect(project.ui.layout.dialogue.text.rect,w,h),portrait=pixelRect(project.ui.layout.dialogue.portrait.rect,w,h),button=pixelRect(project.ui.layout.menu.buttons[0].rect,w,h);
+assert.deepEqual(dialogue.pixel(portrait.x+portrait.w/2,portrait.y+portrait.h/2),[50,140,220]);assert.ok(portrait.y+portrait.h<=zone.y,'portrait must not cover body text');
+assert.deepEqual(dialogue.pixel(500,550),[24,112,56],'window image applies authored 80% alpha');assert.deepEqual(menu.pixel(button.x+4,button.y+4),[230,90,30],'actual mouse-down state uses pressed image');
+let glyphPixels=0;for(let y=zone.y;y<zone.y+zone.h;y++)for(let x=zone.x;x<zone.x+zone.w;x++){const pixel=dialogue.pixel(x,y);if(pixel.every(n=>n>160))glyphPixels++;}assert.ok(glyphPixels>100,'body text must actually render');
+const result={passed:true,portraitAboveText:true,windowAlpha:true,pressedStatePixels:true,bodyTextGlyphPixels:glyphPixels,gameRoot};await fs.writeFile('.artifacts/native-0212-ui/render-result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));

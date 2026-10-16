@@ -1,0 +1,8 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
+const json=async file=>JSON.parse((await fs.readFile(file,'utf8')).replace(/^\uFEFF/,'')),sha=bytes=>createHash('sha256').update(bytes).digest('hex'),fixture=await json('.artifacts/recovery-023-data-fixture.json'),root=await fs.realpath(fixture.root),profile=await fs.realpath(fixture.profile);assert.equal(path.dirname(profile),root);assert.ok(path.basename(profile).startsWith('ui-profile-'));
+if(process.argv.includes('--restore')){const info=await json('.artifacts/recovery-023-media-fault.json'),source=await fs.realpath(info.hidden);assert.equal(path.dirname(path.dirname(source)),root);assert.equal(path.dirname(info.original),path.join(profile,'workspace/assets'));assert.equal(sha(await fs.readFile(source)),info.sha256);await assert.rejects(fs.access(info.original));await fs.rename(source,info.original);console.log('Original owned QA media restored.');}
+else{const original=await fs.realpath(fileURLToPath(fixture.savedProject.resources[0].source));assert.equal(path.dirname(original),path.join(profile,'workspace/assets'));const bytes=await fs.readFile(original),digest=sha(bytes);assert.equal(digest,fixture.hashes[0].sha256);const directory=await fs.mkdtemp(path.join(root,'media-fault-')),hidden=path.join(directory,path.basename(original));await fs.rename(original,hidden);await fs.writeFile('.artifacts/recovery-023-media-fault.json',JSON.stringify({original,hidden,sha256:digest},null,2));console.log('One owned QA media file temporarily moved to a recoverable location.');}

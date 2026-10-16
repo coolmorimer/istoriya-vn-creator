@@ -1,0 +1,42 @@
+import {gameUi,pixelRect,QUICK_ACTIONS,uiLayoutProblems} from './game-ui.mjs';
+import {systemUiScript} from './system-ui-script.mjs';
+export function gameUiScript(project,assetMap,{quote,dialogueBackgroundPath=null}){
+ const errors=uiLayoutProblems(project);if(errors.length)throw Error(errors.map(e=>e.message).join(' '));
+ const ui=project.ui??{},layout=gameUi(project),w=project.meta.resolution.width,h=project.meta.resolution.height;
+ const plain=value=>String(value).replaceAll('[','[[').replaceAll('{','{{');
+ const font=object=>assetMap.get(object.font)??(['DejaVuSans.ttf','DejaVuSans-Bold.ttf'].includes(object.font)?object.font:'DejaVuSans.ttf');
+ const box=(rect,indent='        ')=>{const r=pixelRect(rect,w,h);return [`${indent}xpos ${r.x}`,`${indent}ypos ${r.y}`,`${indent}xanchor 0`,`${indent}yanchor 0`,`${indent}xsize ${r.w}`,`${indent}ysize ${r.h}`];};
+ const textStyle=(object,indent='        ',prefix='')=>[`${indent}${prefix}font ${quote(font(object))}`,`${indent}${prefix}size ${object.size}`,`${indent}${prefix}color ${quote(object.color)}`,`${indent}${prefix}text_align ${object.align==='right'?'1.0':object.align==='center'?'0.5':'0.0'}`,...(prefix?[`${indent}${prefix}xalign ${object.align==='right'?'1.0':object.align==='center'?'0.5':'0.0'}`]:[`${indent}substitute False`])];
+ const image=(id,width,height,fallback)=>assetMap.has(id)?`Transform(${quote(assetMap.get(id))}, xysize=(${width}, ${height}))`:`Solid(${quote(fallback)})`;
+ const backgrounds=(object,width,height,indent='        ',pressed=null)=>[['background','idleResourceId','backgroundColor'],['hover_background','hoverResourceId','hoverColor'],['insensitive_background','disabledResourceId','disabledColor']].map(([property,key,color])=>`${indent}${property} ${pressed&&property!=='insensitive_background'?`(${image(object.pressedResourceId??object.idleResourceId,width,height,object.pressedColor)} if ${pressed} else ${image(object[key]??object.idleResourceId,width,height,object[color])})`:image(object[key]??object.idleResourceId,width,height,object[color])}`);
+ const pressKeys=()=>['    key "mousedown_1" action SetScreenVariable("_istoriya_pressed", _istoriya_hover) capture False','    key "mouseup_1" action SetScreenVariable("_istoriya_pressed", None) capture False'];
+ const lines=['# Создано конструктором «История».','init offset = 200','','init python:','    def _istoriya_ui_text(value):','        return str(value).replace("[", "[[").replace("{", "{{")',''];
+ if(layout.menu.enabled){const page=layout.menu;
+  lines.push('init python:','    def _istoriya_continue_game():','        slot = renpy.newest_slot()','        if slot is not None:','            renpy.load(slot)','','screen main_menu():','    tag menu','    default _istoriya_hover = None','    default _istoriya_pressed = None',`    add ${image(page.resourceId,w,h,page.backgroundColor)}`);
+  // Keep an imported legacy menu background until the author selects a new resource.
+  if(!page.resourceId&&ui.mainMenuBackground)lines.push('    add Transform(gui.main_menu_background, xysize=(config.screen_width, config.screen_height))');
+  if(page.title.visible)lines.push(`    text ${quote(project.meta.title.replaceAll('{','{{'))}:`,...box(page.title.rect),...textStyle(page.title),'        id "istoriya_menu_title"');
+  const actions={start:'Start()',continue:'Function(_istoriya_continue_game)',load:'ShowMenu("load")',gallery:'ShowMenu("istoriya_gallery")',preferences:'ShowMenu("preferences")',about:'ShowMenu("about")',quit:'Quit(confirm=True)'};
+  for(const button of page.buttons.filter(b=>b.visible)){const r=pixelRect(button.rect,w,h);lines.push('    button:',`        id ${quote(`istoriya_menu_${button.id}`)}`,`        action ${actions[button.id]}`,`        hovered SetScreenVariable("_istoriya_hover", ${quote(button.id)})`,'        unhovered [SetScreenVariable("_istoriya_hover", None), SetScreenVariable("_istoriya_pressed", None)]',...box(button.rect),'        padding (12, 0)',...backgrounds(button,r.w,r.h,'        ',`_istoriya_pressed == ${quote(button.id)}`));if(button.id==='continue')lines.push('        sensitive renpy.newest_slot() is not None');lines.push(`        text ${quote(button.label.replaceAll('{','{{'))}:`,`            id ${quote(`istoriya_menu_${button.id}_text`)}`,`            xalign ${button.align==='right'?'1.0':button.align==='center'?'0.5':'0.0'}`,'            yalign 0.5',...textStyle(button,'            '));}
+  lines.push(...pressKeys(),'');
+ }
+ if(layout.dialogue.enabled){const page=layout.dialogue,window=page.window,r=pixelRect(window.rect,w,h);
+  const background=!window.resourceId&&dialogueBackgroundPath?`Transform(${quote(dialogueBackgroundPath)}, xysize=(${r.w}, ${r.h}))`:image(window.resourceId,r.w,r.h,window.color);
+  lines.push('screen say(who, what):','    window:','        id "window"',...box(window.rect),'        padding (0, 0)',`        background Transform(${background}, alpha=${window.opacity/100})`);
+  if(page.name.visible)lines.push('    if who is not None:','        text who.replace("{", "{{"):','            id "who"',...box(page.name.rect,'            '),...textStyle(page.name,'            '));
+  lines.push('    viewport:','        id "istoriya_text_zone"',...box(page.text.rect),'        mousewheel False','        draggable False','        text what:','            id "what"','            style "say_dialogue"',`            xsize ${pixelRect(page.text.rect,w,h).w}`);
+  if(page.portrait.visible)lines.push('    add Transform(SideImage(), xysize=('+pixelRect(page.portrait.rect,w,h).w+', '+pixelRect(page.portrait.rect,w,h).h+'), fit="contain"):','        id "istoriya_portrait"',...box(page.portrait.rect));
+  if(page.next.visible)lines.push(`    text ${quote(page.next.label.replaceAll('{','{{'))}:`,'        id "istoriya_continue_indicator"',...box(page.next.rect),...textStyle(page.next));
+  if(page.hide.visible)lines.push(`    textbutton ${quote(plain(page.hide.label))}:`,`        id "istoriya_hide_ui"`,'        action HideInterface()',...box(page.hide.rect),'        background None','        padding (0, 0)',...textStyle(page.hide,'        ','text_'));
+  lines.push('');
+ }
+ if(layout.choice.enabled){const page=layout.choice,button=page.button,r=pixelRect(page.rect,w,h),height=Math.round(button.height*h/100),padding=Math.round(button.padding*w/100);
+  lines.push('screen choice(items):','    default _istoriya_hover = None','    default _istoriya_pressed = None','    viewport:','        id "istoriya_choices"',...box(page.rect),'        mousewheel True','        draggable False','        vbox:',`            spacing ${Math.round(page.spacing*h/100)}`,'            for index, i in enumerate(items):','                textbutton _istoriya_ui_text(i.caption):','                    action i.action','                    hovered SetScreenVariable("_istoriya_hover", index)','                    unhovered [SetScreenVariable("_istoriya_hover", None), SetScreenVariable("_istoriya_pressed", None)]',`                    xsize ${r.w}`,`                    ysize ${height}`,`                    padding (${padding}, 0)`,...textStyle(button,'                    ','text_'),...backgrounds(button,r.w,height,'                    ','_istoriya_pressed == index'));lines.push(...pressKeys(),'');
+ }
+ if(layout.quick.enabled){const page=layout.quick,r=pixelRect(page.rect,w,h),buttons=QUICK_ACTIONS.filter(([key])=>ui.quickMenuButtons?.[key]!==false),actions={rollback:'Rollback()',history:'ShowMenu("history")',auto:'Preference("auto-forward", "toggle")',skip:'Skip()',save:'ShowMenu("save")',load:'ShowMenu("load")',preferences:'ShowMenu("preferences")'};
+  lines.push('screen quick_menu():','    zorder 100','    if quick_menu'+(ui.showQuickMenu===false?' and False':'')+':','        hbox:',...box(page.rect,'            '),`            spacing ${Math.round(w*.004)}`);
+  for(const [key,label]of buttons)lines.push(`            textbutton ${quote(label)}:`,`                id ${quote(`istoriya_quick_${key}`)}`,`                action ${actions[key]}`,`                xsize ${Math.max(1,Math.floor((r.w-(buttons.length-1)*w*.004)/Math.max(1,buttons.length)))}`,`                ysize ${r.h}`,'                padding (0, 0)',...textStyle(page,'                ','text_'),`                background Transform(Solid(${quote(page.backgroundColor)}), alpha=${page.opacity/100})`);
+  if(!buttons.length)lines.push('            null');lines.push('');
+ }
+ return lines.join('\n')+'\n'+systemUiScript(project,layout,assetMap,{quote,box,textStyle,image,backgrounds,pressKeys});
+}

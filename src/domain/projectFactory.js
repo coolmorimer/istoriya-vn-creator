@@ -1,4 +1,5 @@
 import { defaultProject, createId } from "../data/defaultProject.js";
+import {defaultGameUi} from '../../runtime/game-ui.mjs';
 
 export function createProject(configuration = {}) {
   const options = typeof configuration === "string" ? { template: configuration } : configuration;
@@ -13,12 +14,13 @@ export function createProject(configuration = {}) {
     const sceneId = createId("scene");
     project.scenes = { [sceneId]: { id: sceneId, number: "1.1", title: "Начало", description: "", background: null, backgroundResourceId: null, transition: "none", duration: 1, characters: [], actions: [] } };
     project.chapters = [{ id: createId("chapter"), title: "Глава 1", scenes: [sceneId] }];
-    project.resources = []; project.characters = []; project.variables = []; project.flags = [];
+    project.resources = []; project.characters = []; project.variables = []; project.flags = [];project.items=[];
     project.gallery = { sections: [{ id: createId("gallery"), title: "Иллюстрации", items: [] }] };
     project.ui.mainMenuBackground = null;
   }
   project.ui.accent = { romance: "#e77aaa", horror: "#c44251", minimal: "#a8a8a8" }[template] ?? "#ac6bff";
   if (template === "minimal") { project.ui.dialogueOpacity = 72; project.ui.showQuickMenu = false; }
   if (template === "cinematic") project.ui.dialogueOpacity = 68;
+  if(template!=='tutorial')project.ui.layout=defaultGameUi(project,true);
   return project;
 }

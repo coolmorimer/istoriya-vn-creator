@@ -1,40 +1,65 @@
 import { timelineEvents } from "../../runtime/timeline-model.mjs";
 const actionsFor = scene => scene?.timelineEnabled ? timelineEvents(scene) : scene?.actions ?? [];
 import { resolveStoryProject, targetScene } from "../../runtime/story-routing.mjs";
+import {backgroundTransform,backgroundSource} from '../../runtime/background-transform.mjs';
+import {animationSettings,animationEnd} from '../../runtime/character-animation.mjs';
+import {sceneCharacterLayers,shownCharacterLayer} from '../../runtime/visual-order.mjs';
+import {availableReactions,applyReactionState,explorationReady} from '../../runtime/interactions.mjs';
+import {evaluateCondition,applyGameplayEffect,scalarValue} from '../../runtime/game-logic.mjs';
+import {AUDIO_CHANNELS,audioVolume,audioFade} from '../../runtime/audio-model.mjs';
+let previewRun=0;
+function stopPreviewAudio(state,channel,fadeOut=0){delete state.audio[channel];state.audioStops??={};state.audioStops[channel]={fadeOut:audioFade(fadeOut),token:`stop-${++previewRun}`};}
+function playPreviewAudio(state,channel,track){state.audio[channel]=track;if(state.audioStops)delete state.audioStops[channel];}
 export function initialPreview(project, sceneId, actionId) {
   const scene = project.scenes[sceneId];
-  return { sceneId, index: Math.max(0, actionsFor(scene).findIndex((action) => action.id === actionId) ?? 0), variables: Object.fromEntries(project.variables.map((v) => [v.id, v.initial])), flags: Object.fromEntries(project.flags.map((f) => [f.id, f.initial])), background: scene?.background, layers: structuredClone(scene?.characters ?? []), audio: {}, cg: null, notification: null, waiting: null, timelineTime:0, displayText:null, ended: false };
+  return { sceneId, index: Math.max(0, actionsFor(scene).findIndex((action) => action.id === actionId) ?? 0), variables: Object.fromEntries(project.variables.map((v) => [v.id, scalarValue(v.type,v.initial)])), flags: Object.fromEntries(project.flags.map((f) => [f.id, scalarValue('boolean',f.initial)])), background: backgroundSource(project,scene), backgroundTransform:backgroundTransform(scene?.backgroundTransform),layers: sceneCharacterLayers(scene), audio: {},inventory:{},hiddenProps:[],usedInteractions:[],propImages:{}, cg: null, notification: null, waiting: null, timelineTime:0, displayText:null, ended: false };
 }
 export function conditionPass(condition, state, project) {
-  if (!condition) return true;
-  const variable = project.variables.find((v) => v.id === condition.variableId);
-  const a = condition.flagId ? state.flags[condition.flagId] : state.variables[condition.variableId];
-  const b = condition.flagId || variable?.type === "boolean" ? condition.value === true || condition.value === "true" : ["number", "relationship"].includes(variable?.type) ? Number(condition.value) : String(condition.value ?? "");
-  return ({ eq: () => a === b, neq: () => a !== b, gt: () => a > b, gte: () => a >= b, lt: () => a < b, lte: () => a <= b }[condition.operator ?? "eq"] ?? (() => false))();
+  return evaluateCondition(condition,state,project);
 }
 function changeValue(effect, state, project) {
-  if (effect.kind === "flag" || effect.type === "flag") { state.flags[effect.flagId] = effect.value === true || effect.value === "true"; return; }
-  const variable = project.variables.find((v) => v.id === effect.variableId);
-  if (!variable) return;
-  const numeric = ["number", "relationship"].includes(variable.type);
-  const value = numeric ? Number(effect.value) || 0 : variable.type === "boolean" ? effect.value === true || effect.value === "true" : String(effect.value ?? "");
-  state.variables[variable.id] = numeric && effect.operation === "add" ? Number(state.variables[variable.id]) + value : numeric && effect.operation === "subtract" ? Number(state.variables[variable.id]) - value : value;
-  if (variable.type === "relationship") state.variables[variable.id] = Math.min(variable.max ?? 100, Math.max(variable.min ?? 0, state.variables[variable.id]));
+  applyGameplayEffect(effect,state,project);
+}
+function enterPreviewScene(project,state,id) {
+ const scene=project.scenes[id];
+ if(!scene){state.ended=true;state.error='Сцена перехода не найдена';return;}
+ Object.assign(state,{sceneId:id,index:0,background:backgroundSource(project,scene),backgroundTransform:backgroundTransform(scene.backgroundTransform),backgroundActionId:null,layers:sceneCharacterLayers(scene),cg:null,cgAssetId:null,waiting:null,timelineTime:0,displayText:null,animations:{}});
+}
+export function interactPreview(project,previous,layerId,reactionId) {
+ project=resolveStoryProject(project);const state=structuredClone(previous);
+ if(state.waiting?.type!=='explore'||state.cg||state.ended)return state;
+ const scene=project.scenes[state.sceneId],layer=scene.images?.find(l=>l.id===layerId);
+ if(!layer)return state;
+ const reaction=availableReactions(scene.id,layer,state,(c,s)=>conditionPass(c,s,project)).find(r=>r.id===reactionId);
+ if(!reaction)return state;
+ const exploration=state.waiting;
+ applyReactionState(scene.id,layer,reaction,state);
+ for(const effect of reaction.effects??[])changeValue(effect,state,project);
+ const token=`reaction-${++previewRun}`;
+ if(reaction.soundAssetId)playPreviewAudio(state,'sound',{assetId:reaction.soundAssetId,volume:reaction.soundVolume??1,token});
+ if(reaction.voiceAssetId)playPreviewAudio(state,'voice',{assetId:reaction.voiceAssetId,volume:audioVolume(reaction.voiceVolume),token});
+ else stopPreviewAudio(state,'voice');
+ if(reaction.text||reaction.voiceAssetId){state.waiting={...reaction,text:reaction.text??'',type:reaction.speakerId?'dialogue':'narration',returnToExplore:exploration};state.displayText=state.waiting;return state;}
+ if(reaction.targetSceneId){enterPreviewScene(project,state,reaction.targetSceneId);return advancePreview(project,state);}
+ return state;
 }
 export function advancePreview(project, previous, optionId) {
   project = resolveStoryProject(project);
   const state = structuredClone(previous);
-  const enter = (id) => {
-    const scene = project.scenes[id];
-    if (!scene) { state.ended = true; state.error = "Сцена перехода не найдена"; return; }
-    Object.assign(state, { sceneId:id, index:0, background:scene.background, layers:structuredClone(scene.characters ?? []), cg:null, waiting:null, timelineTime:0, displayText:null });
-  };
+  state.animations??={};state.animationSequence??=0;state.runId??=++previewRun;
+  const enter = id=>enterPreviewScene(project,state,id);
+  if(state.waiting?.returnToExplore){
+    const reaction=state.waiting;state.displayText=null;
+    stopPreviewAudio(state,'voice');
+    if(reaction.targetSceneId)enter(reaction.targetSceneId);else {state.waiting=reaction.returnToExplore;return state;}
+  }
+  if(state.waiting?.type==='explore'&&!explorationReady(state.waiting,state,project))return state;
   if (state.waiting?.type === "choice") {
     const option = state.waiting.options.find((o) => o.id === optionId && conditionPass(o.condition,state,project));
     if (!option) return state;
     for (const effect of option.effects ?? []) changeValue(effect,state,project);
     enter(targetScene(project, option));
-  } else if (state.waiting) { if(state.waiting.timelineTextEnd)state.displayText=null; state.index++; state.waiting = null; }
+  } else if (state.waiting) { if(state.waiting.timelineTextEnd)state.displayText=null; if(['dialogue','narration'].includes(state.waiting.type))stopPreviewAudio(state,'voice'); state.index++; state.waiting = null; }
   const order = project.chapters.flatMap((c) => c.scenes);
   for (let count = 0; count < 1000 && !state.ended; count++) {
     const scene = project.scenes[state.sceneId];
@@ -42,34 +67,56 @@ export function advancePreview(project, previous, optionId) {
     if (!action) { const next = order[order.indexOf(state.sceneId)+1]; if (next) { enter(next); continue; } state.ended=true; break; }
     if(action.type==='timelineWait') { const duration=action.time-(state.timelineTime??0);state.timelineTime=action.time;if(duration>.001){state.waiting={id:'timeline-'+state.index,type:'pause',duration};return state;}state.index++;continue; }
     if(action.type==='timelineTextEnd'){if(action.wait){state.waiting={...state.displayText,timelineTextEnd:true};return state;}state.displayText=null;state.index++;continue;}
-    if(action.type==='timelineStopAudio'){delete state.audio[action.channel];state.index++;continue;}
-    if(action.type==='timelineBackgroundEnd'){state.background=scene.background;state.index++;continue;}
+    if(action.type==='timelineStopAudio'){stopPreviewAudio(state,action.channel);state.index++;continue;}
+    if(action.type==='timelineBackgroundEnd'){state.background=backgroundSource(project,scene);state.backgroundTransform=backgroundTransform(scene.backgroundTransform);state.backgroundActionId=null;state.index++;continue;}
     if(scene.timelineEnabled&&action.type==='pause'){state.index++;continue;}
+    if(action.soundAssetId)playPreviewAudio(state,'sound',{assetId:action.soundAssetId,volume:action.soundVolume??1,token:`${state.runId}:${state.sceneId}-${state.index}`});
+    if(action.type==='explore'){state.displayText=null;state.waiting=action;return state;}
+    if (['dialogue','narration'].includes(action.type)) {
+      if (action.type === 'dialogue' && action.spriteId) { const layer=state.layers.find(l=>l.characterId===action.speakerId); if(layer)layer.spriteId=action.spriteId; }
+      if (action.voiceAssetId) playPreviewAudio(state,'voice',{assetId:action.voiceAssetId,token:`${state.runId}:${++previewRun}`,volume:audioVolume(action.voiceVolume)});
+    }
     if(scene.timelineEnabled&&['dialogue','narration'].includes(action.type)){state.displayText=action;state.index++;continue;}
     if (["dialogue","narration","choice","pause"].includes(action.type)) {
-      if (action.type === "dialogue" && action.spriteId) { const layer = state.layers.find((l) => l.characterId === action.speakerId); if (layer) layer.spriteId=action.spriteId; }
-      if (action.voiceAssetId) state.audio.voice = {assetId:action.voiceAssetId, token:`${state.sceneId}-${state.index}`, volume:1};
+      if(['dialogue','narration'].includes(action.type))state.displayText=action;
+      if(action.type==='choice')state.displayText=null;
       state.waiting = action.type === "choice" ? {...action,options:action.options.filter((o) => conditionPass(o.condition,state,project))} : action;
       if (action.type === "choice" && !state.waiting.options.length) { state.error="Все варианты скрыты условиями"; state.ended=true; }
       return state;
     }
     if (action.type === "jump") { enter(action.targetSceneId); continue; }
-    if (action.type === "condition") { enter(conditionPass(action,state,project) ? action.trueSceneId : action.falseSceneId); continue; }
+    if (action.type === "condition") { enter(conditionPass(action.condition??action,state,project) ? action.trueSceneId : action.falseSceneId); continue; }
     if (action.type === "end") { state.ended=true; break; }
     if (["variable","flag"].includes(action.type)) changeValue(action,state,project);
-    if (action.type === "background") { state.background=project.resources.find((r) => r.id===action.assetId)?.source; if(!scene.timelineEnabled)state.layers=[]; }
-    if (["music","sound","voice","ambience"].includes(action.type)) state.audio[action.type]={...action,token:`${state.sceneId}-${state.index}`};
-    if (action.type === "stopMusic") delete state.audio.music;
-    if (action.type === "showCG") state.cg=project.resources.find((r) => r.id===action.assetId)?.source;
-    if (action.type === "hideCG") state.cg=null;
+    if (action.type === "background") { state.background=project.resources.find((r) => r.id===action.assetId)?.source;state.backgroundTransform=backgroundTransform(action.backgroundTransform);state.backgroundActionId=action.id; if(!scene.timelineEnabled&&action.preserveCharacters!==true){state.layers=[];state.animations={};state.cg=null;state.cgAssetId=null;} }
+    if (AUDIO_CHANNELS.includes(action.type)) playPreviewAudio(state,action.type,{...action,volume:audioVolume(action.volume),loop:action.loop??['music','ambience'].includes(action.type),token:`${state.runId}:${++previewRun}`});
+    if (action.type === "stopMusic") stopPreviewAudio(state,'music',action.fadeOut);
+    if (action.type === 'stopAudio'&&AUDIO_CHANNELS.includes(action.channel)) stopPreviewAudio(state,action.channel,action.fadeOut);
+    if (action.type === "showCG") {state.cg=project.resources.find((r) => r.id===action.assetId)?.source;state.cgAssetId=action.assetId;}
+    if (action.type === "hideCG") {state.cg=null;state.cgAssetId=null;}
     if (action.type === "event") state.notification=action.text;
     if (action.type === "hideCharacter") state.layers=state.layers.filter((l)=>l.characterId!==action.characterId);
+    if (['showCharacter','hideCharacter','changeSprite','moveCharacter'].includes(action.type))delete state.animations[action.characterId];
+    if (action.type==='characterAnimation') {
+      const layer=state.layers.find(l=>l.characterId===action.characterId&&l.visible!==false);
+      if(layer){
+        const {duration}=animationSettings(action);
+        state.animations[action.characterId]={token:`${state.runId}:${++state.animationSequence}`,base:structuredClone(layer),action};
+        Object.assign(layer,animationEnd(layer,action));
+        if(!scene.timelineEnabled){state.waiting={id:action.id,type:'pause',duration};return state;}
+      }
+    }
     if (["showCharacter","changeSprite","moveCharacter"].includes(action.type)) {
       let layer=state.layers.find((l)=>l.characterId===action.characterId);
+      if(action.type==='showCharacter') {
+        const shown=shownCharacterLayer(scene,action,scene.actions.findIndex(a=>a.id===action.id),layer);
+        if(layer)Object.assign(layer,shown);else state.layers.push(shown);
+        state.index++;continue;
+      }
       if (!layer) { layer={characterId:action.characterId,x:50,y:100,scale:100,opacity:100,rotation:0,visible:true}; state.layers.push(layer); }
       if (["showCharacter", "changeSprite"].includes(action.type)) layer.spriteId=action.spriteId ?? null;
       if (action.position) layer.x=({left:25,center:50,right:75})[action.position];
-      for (const key of ['x','y','scale']) if (action[key] != null) layer[key]=action[key];
+      for (const key of ['x','y','scale','rotation','opacity','flip']) if (action[key] != null) layer[key]=action[key];
     }
     state.index++;
   }

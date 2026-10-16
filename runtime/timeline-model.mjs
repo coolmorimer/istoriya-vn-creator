@@ -1,7 +1,7 @@
-export const durationField = action => ({moveCharacter:'duration',characterAnimation:'duration',event:'duration',pause:'duration',music:'fadeIn',stopMusic:'fadeOut'})[action.type] ?? null;
-export const waitsForPlayer = action => ['dialogue','narration','choice'].includes(action.type);
+export const durationField = action => ({moveCharacter:'duration',characterAnimation:'duration',event:'duration',pause:'duration',music:'fadeIn',stopMusic:'fadeOut',stopAudio:'fadeOut'})[action.type] ?? null;
+export const waitsForPlayer = action => ['dialogue','narration','choice','explore'].includes(action.type);
 export const canSplitClip = action => ['background','showCG','showCharacter','dialogue','narration','pause'].includes(action.type);
-export const trackFor = action => ['background','showCG','hideCG'].includes(action.type)?'background':(/Character|Sprite/.test(action.type)||action.type==='characterAnimation')?`character:${action.characterId??'none'}`:['dialogue','narration'].includes(action.type)?'text':action.type==='choice'?'choice':['music','stopMusic','sound','voice','ambience'].includes(action.type)?`audio:${action.type==='stopMusic'?'music':action.type}`:'logic';
+export const trackFor = action => ['background','showCG','hideCG'].includes(action.type)?'background':(/Character|Sprite/.test(action.type)||action.type==='characterAnimation')?`character:${action.characterId??'none'}`:['dialogue','narration'].includes(action.type)?'text':action.type==='choice'?'choice':['music','stopMusic','stopAudio','sound','voice','ambience'].includes(action.type)?`audio:${action.type==='stopMusic'?'music':action.type==='stopAudio'?action.channel:action.type}`:'logic';
 export const roundTime = n => Math.round(n*100)/100;
 export function timelineClips(scene) {
   let cursor=0;

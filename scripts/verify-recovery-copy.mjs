@@ -1,0 +1,9 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+const json=async file=>JSON.parse((await fs.readFile(file,'utf8')).replace(/^\uFEFF/,'')),fixture=await json('.artifacts/recovery-023-data-fixture.json'),root=await fs.realpath(fixture.root),result=await json(path.join(root,'ui-backup-result.json')),file=await fs.realpath(result.filePath);assert.equal(path.dirname(path.dirname(file)),path.join(root,'backups'));assert.ok(path.basename(path.dirname(file)).startsWith('copy-'));assert.equal(result.canceled,false);
+const raw=await fs.readFile(file,'utf8');let project=null;
+if(result.raw){assert.equal(raw,'{broken recovery QA');}
+else{project=JSON.parse(raw);assert.equal(project.id,'media_repair_qa');assert.equal(project.resources.length,5);assert.equal(project.scenes[fixture.sceneId].actions.find(a=>a.id===fixture.actionId).text,'Черновик после аварии — восстановлен без потери ресурсов.');for(const resource of project.resources){if(result.referencesOnly)assert.ok(resource.source.startsWith('file:'));else{assert.ok(resource.source.startsWith('data:'));assert.equal(createHash('sha256').update(Buffer.from(resource.source.split(',')[1],'base64')).digest('hex'),fixture.hashes.find(r=>r.id===resource.id).sha256);}}assert.equal(project.characters[0].portrait,project.resources[0].source);assert.equal(project.characters[0].sprites[0].source,project.resources[0].source);}
+const kind=result.raw?'raw':result.referencesOnly?'references':'portable',proof={passed:true,kind,...result,sha256:createHash('sha256').update(raw).digest('hex'),bytes:Buffer.byteLength(raw),draftTextPreserved:!result.raw,mediaHashesVerified:kind==='portable'?5:0,legacyAliasesPreserved:!result.raw};await fs.writeFile(`.artifacts/recovery-023-${kind}-copy.json`,JSON.stringify(proof,null,2));console.log(JSON.stringify(proof,null,2));

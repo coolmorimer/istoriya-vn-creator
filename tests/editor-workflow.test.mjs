@@ -27,8 +27,8 @@ test("Новый проект и все обычные шаблоны не со�
   assert.ok(Object.keys(createProject("tutorial").scenes).length > 1);
 });
 
-test("Создание, редактирование, смена проекта, Undo/Redo и открытие не теряют данные", () => {
-  const p = store.getState().newProject({title:"Проверка"});
+test("Создание, редактирование, смена проекта, Undo/Redo и открытие не теряют данные", async () => {
+  const p = await store.getState().newProject({title:"Проверка"});
   const first = store.getState().activeSceneId;
   assert.equal(store.getState().projects[0].id, p.id);
   store.getState().addAction("narration");
@@ -41,10 +41,10 @@ test("Создание, редактирование, смена проекта,
   assert.ok(store.getState().project.scenes[store.getState().activeSceneId]);
   store.getState().redo();
   assert.ok(store.getState().project.scenes[second]);
-  store.getState().newProject();
-  assert.ok(store.getState().openProject(p.id));
+  await store.getState().newProject();
+  assert.ok(await store.getState().openProject(p.id));
   assert.equal(store.getState().project.scenes[first].actions[0].text, "Сохранённый текст");
-  store.getState().saveNow();
+  await store.getState().saveNow();
 });
 
 test("Дисковое хранилище сохраняет крупные ресурсы отдельно и экспортирует переносимый проект", () => {
@@ -57,7 +57,9 @@ test("Дисковое хранилище сохраняет крупные ре
     const loaded = JSON.parse(disk.getItem("istoriya-project-v2"));
     assert.match(loaded.resources[0].source, /^file:/);
     assert.equal(portableProject(loaded, dir).resources[0].source, source);
-    assert.ok(fs.statSync(path.join(dir,"istoriya-project-v2.json")).size < 10000);
+    const metadataBytes=Buffer.byteLength(JSON.stringify({...p,resources:[]},null,2));
+    assert.ok(fs.statSync(path.join(dir,"istoriya-project-v2.json")).size < metadataBytes+2048);
+    assert.doesNotMatch(fs.readFileSync(path.join(dir,"istoriya-project-v2.json"),'utf8'),/data:image\/png;base64/);
   } finally { fs.rmSync(dir, {recursive:true, force:true}); }
 });
 

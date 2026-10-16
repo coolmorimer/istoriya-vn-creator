@@ -46,6 +46,9 @@ test("настройки папки сохранений и курсора по�
 test("проект компилируется в запускаемую структуру Ren'Py", async () => {
   const module = await import("../src/data/defaultProject.js");
   const destination = await fs.mkdtemp(path.join(os.tmpdir(), "istoriya-compile-"));
+  await fs.mkdir(path.join(destination,'game'));
+  await fs.writeFile(path.join(destination,'game/guisupport.rpy'),'init 100 python:\n    import gui7\n');
+  await fs.writeFile(path.join(destination,'game/guisupport.rpyc'),'legacy bytecode');
   const result = await compileProject(structuredClone(module.defaultProject), destination, {
     sdkPath: path.resolve(root, "..", "renpy-8.5.3-sdk"),
     assetsRoot: path.join(root, "public"),
@@ -61,6 +64,10 @@ test("проект компилируется в запускаемую стру
   assert.match(options, /define build\.name = "severnyy_svet"/);
   assert.ok((await fs.stat(path.join(destination, "game", "screens.rpy"))).size > 1000);
   assert.ok((await fs.stat(path.join(destination, "game", "guisupport.rpy"))).size > 100);
+  assert.doesNotMatch(await fs.readFile(path.join(destination,'game/guisupport.rpy'),'utf8'), /gui7|sys\.path|generate_gui/);
+  await assert.rejects(fs.access(path.join(destination,'game/guisupport.rpyc')), {code:'ENOENT'});
+  assert.doesNotMatch(await fs.readFile(path.join(destination,'game/gui.rpy'),'utf8'), /gui\.scale\(/);
+  assert.ok((await fs.stat(path.join(destination,'game/gui/button/choice_idle_background.png'))).size>0);
   assert.match(await fs.readFile(path.join(destination, "game", "gui.rpy"), "utf8"), /gui\.init\(1920, 1080\)/);
   const androidConfig = JSON.parse(await fs.readFile(path.join(destination, "android.json"), "utf8"));
   assert.equal(androidConfig.package, "com.istoriya.severnyy_svet");

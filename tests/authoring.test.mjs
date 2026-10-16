@@ -22,7 +22,8 @@ test('Переход в главу следует новой входной сц
 test('Шрифт, обводка, тень и скорость текста попадают в RenPy',()=>{
  const p=createProject({title:'Текст'}),id=Object.keys(p.scenes)[0];
  p.ui.textStyle={font:'font1',size:40,color:'#ff9900',outline:2,outlineColor:'#000000',speed:60};
- p.scenes[id].actions=[{id:'say',type:'narration',text:'Проверка',textStyle:{bold:true,italic:true,shadow:true}},{id:'wait',type:'pause',duration:2.3}];
+ p.characters=[{id:'hero',name:'Герой',color:'#ffffff',sprites:[]}];
+ p.scenes[id].actions=[{id:'say',type:'dialogue',speakerId:'hero',text:'Проверка',textStyle:{bold:true,italic:true,shadow:true}},{id:'wait',type:'pause',duration:2.3}];
  assert.ok(compilerInternals.usedResourceIds(p).has('font1'));
  const script=compilerInternals.createScript(p,new Map(),new Map([['font1','images/font.ttf']]));
  for(const value of ['what_font="images/font.ttf"','what_size=40','what_bold=True','what_italic=True','what_slow_cps=60','pause 2.3'])assert.ok(script.includes(value),value);

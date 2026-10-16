@@ -1,0 +1,11 @@
+.prop-author-picker {width:min(760px,100%);display:flex;flex-direction:column;overflow:hidden;}
+.prop-author-picker>header {flex:none;}
+.prop-author-picker .character-create-form {display:flex;flex-direction:column;min-height:0;}
+.prop-author-picker .character-create-body {min-height:0;overflow-y:auto;padding-right:4px;}
+.prop-author-picker .character-create-form>footer {flex:none;margin-top:16px;}
+.prop-author-picker .character-author-error {flex:none;}
+.prop-author-picker textarea {width:100%;min-height:84px;padding:8px 10px;resize:vertical;border:1px solid #535367;border-radius:6px;color:#f7f2ff;background:#11141d;font:inherit;font-size:14px;}
+.prop-author-picker textarea::placeholder {color:#b7acc6;}
+.prop-author-check {display:flex;gap:10px;align-items:center;font-size:13px;line-height:1.5;}
+.prop-author-check input {width:18px;height:18px;accent-color:#a86aef;}
+@media(max-width:650px) {.prop-author-picker .character-create-body {grid-template-columns:1fr;}.prop-author-picker .character-create-preview {min-height:120px;}.prop-author-picker .character-create-preview>img {height:110px;}}

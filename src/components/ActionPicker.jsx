@@ -21,9 +21,9 @@ export function ActionPicker({ actions, onChoose, onClose }) {
     return () => { document.removeEventListener("keydown", key, true); previous?.focus(); };
   }, [onClose]);
   const groups = [
-    ["История", ["dialogue", "narration", "choice", "jump", "end"]],
+    ["История", ["dialogue", "narration", "choice", "explore", "jump", "end"]],
     ["Сцена и персонажи", ["background", "showCharacter", "hideCharacter", "changeSprite", "moveCharacter", "characterAnimation", "showCG", "hideCG", "effect"]],
-    ["Звук", ["music", "stopMusic", "sound", "voice", "ambience"]],
+    ["Звук", ["music", "stopMusic", "stopAudio", "sound", "voice", "ambience"]],
     ["Логика", ["variable", "flag", "condition", "event", "pause"]],
   ];
   const matches = actions.filter(([, name]) => name.toLowerCase().includes(query.toLowerCase().trim()));

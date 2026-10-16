@@ -8,9 +8,12 @@ output/
 *.keystore
 *.jks
 *.vnproject
+!examples/tea-with-goblins/*.vnproject
 .env
 .env.*
 !.env.example
 docs/audit/
 design/*.png
 *.tsbuildinfo
+src-tauri/target/
+src-tauri/gen/

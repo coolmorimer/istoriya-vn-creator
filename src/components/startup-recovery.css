@@ -1,0 +1,27 @@
+.startup-recovery {height:100dvh;overflow:auto;background:#0d1119;color:#f4effa;padding:clamp(24px,6vh,72px) clamp(24px,6vw,96px);scrollbar-color:#685876 #191b25;}
+.startup-recovery-content {max-width:900px;margin:0 auto;}
+.startup-recovery header {display:flex;align-items:flex-start;gap:18px;margin-bottom:32px;}
+.startup-recovery header>svg {flex:none;color:#bc88ff;margin-top:7px;}
+.startup-recovery h1 {font-size:28px;margin:0 0 12px;letter-spacing:-.02em;}
+.startup-recovery p {font-size:14px;line-height:1.65;color:#c8bed5;max-width:72ch;margin:0;}
+.startup-recovery h2 {font-size:16px;margin:0 0 16px;}
+.startup-recovery-versions {display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-bottom:32px;border-top:1px solid #40384b;border-bottom:1px solid #40384b;padding:24px 0;}
+.startup-recovery-version {min-width:0;}
+.startup-recovery-version>strong {display:block;font-size:18px;overflow-wrap:anywhere;margin-bottom:18px;}
+.startup-recovery dl {margin:0 0 16px;font-size:13px;line-height:1.7;}
+.startup-recovery dl>div {display:flex;justify-content:space-between;gap:12px;}
+.startup-recovery dt {color:#c8bed5;}
+.startup-recovery dd {margin:0;text-align:right;font-variant-numeric:tabular-nums;}
+.startup-recovery-excerpt {overflow-wrap:anywhere;white-space:pre-wrap;}
+.startup-recovery-actions,.startup-recovery-discard>div {display:flex;gap:12px;flex-wrap:wrap;}
+.startup-recovery .button {font-size:13px;min-height:40px;}
+.startup-recovery .button:focus-visible {outline:2px solid #d6b0ff;outline-offset:3px;}
+.startup-recovery-error {display:flex;align-items:flex-start;gap:10px;color:#ffd1c5!important;margin:0 0 24px!important;overflow-wrap:anywhere;}
+.startup-recovery-error svg {flex:none;margin-top:4px;}
+.startup-recovery-discard {margin:24px 0;}
+.startup-recovery-discard p {margin-bottom:18px;}
+.startup-recovery-backup {margin-top:28px;display:flex;flex-wrap:wrap;align-items:flex-start;gap:16px;}
+.startup-recovery-backup>p {flex:1;min-width:240px;font-size:13px;}
+.startup-recovery-backup .recovery-backup {display:flex;flex-direction:column;gap:12px;max-width:420px;}
+.startup-recovery-status {margin-top:24px!important;font-size:13px!important;}
+@media(max-width:700px){.startup-recovery-versions {grid-template-columns:1fr;gap:24px;}.startup-recovery-version+section {border-top:1px solid #40384b;padding-top:24px;}.startup-recovery h1 {font-size:24px;}}

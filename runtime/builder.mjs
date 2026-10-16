@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { compileProject } from "./compiler.mjs";
+import {runtimeException} from './runtime-verification.mjs';
 
 export const BUILD_TARGETS = {
   windows: { kind: "desktop", packageName: "win", fileSuffix: "-win.zip", label: "Windows x64" },
@@ -24,7 +25,7 @@ function runProcess(executable, args, options = {}) {
     child.stderr.on("data", (chunk) => { stderr += chunk.toString(); options.onProgress?.(chunk.toString()); });
     child.on("error", reject);
     child.on("close", (code) => {
-      if (code === 0) resolve({ stdout, stderr });
+      if (code === 0 && !runtimeException(stdout+stderr)) resolve({ stdout, stderr });
       else reject(new Error(stderr.trim() || stdout.trim() || `Процесс завершился с кодом ${code}.`));
     });
   });

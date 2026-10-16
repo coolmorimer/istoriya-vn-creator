@@ -1,0 +1,21 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {validateProject} from '../src/domain/validator.js';
+const source=JSON.parse(await fs.readFile('.artifacts/game-logic-location.json','utf8'));
+const p=JSON.parse(await fs.readFile(source.project,'utf8'));
+p.id='map_authoring_qa';p.meta.title='Карта ветвей — QA';p.meta.saveDirectory='istoriya-map-qa';
+const rules=p.scenes.rules,choice=rules.actions.pop();
+p.scenes.payment={id:'payment',title:'Оплата',characters:[],images:[],actions:[choice]};
+p.chapters=[{id:'entrance',title:'Вход',scenes:['rules']},{id:'hall',title:'Зал',scenes:['payment'],entrySceneId:'payment'},{id:'check-chapter',title:'Проверка',scenes:['check']},{id:'finale',title:'Концовки',scenes:['win','lose'],entrySceneId:'win'}];
+const door=rules.images.find(l=>l.id==='door').interactions[0];
+door.targetChapterId='hall';door.targetSceneId='lose';
+choice.options.find(o=>o.id==='pay').targetChapterId='check-chapter';
+p.scenes.check.actions[0].trueChapterId='finale';p.scenes.check.actions[0].trueSceneId='lose';
+const positions={rules:[50,60],payment:[360,60],check:[670,60],win:[980,60],lose:[670,270]};
+for(const s of Object.values(p.scenes)){s.mapPosition={x:positions[s.id][0],y:positions[s.id][1]};}
+p.chapters.forEach((c,i)=>c.scenes.forEach((id,j)=>p.scenes[id].number=`${i+1}.${j+1}`));
+const checked=validateProject(p);if(!checked.valid)throw Error(JSON.stringify(checked.issues));
+const base=path.join(process.env.LOCALAPPDATA,'IstoriyaQA');await fs.mkdir(base,{recursive:true});
+const root=await fs.mkdtemp(path.join(base,'map-authoring-'));
+const project=path.join(root,'fixture.vnproject');await fs.writeFile(project,JSON.stringify(p));
+await fs.writeFile('.artifacts/map-authoring-location.json',JSON.stringify({root,project},null,2));console.log(JSON.stringify({root,project},null,2));

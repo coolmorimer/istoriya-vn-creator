@@ -1,0 +1,23 @@
+.rule-editor {min-width:0;margin:16px 0;padding:12px 0;border:0;border-top:1px solid #3b3645;color:#eee5f6;}
+.rule-editor legend {padding:0 8px 0 0;font-size:13px;font-weight:600;}
+.rule-editor .rule-editor {margin:12px 0 12px 10px;padding:12px 0 0 10px;}
+.rule-editor .field {margin-bottom:10px;}
+.rule-empty {font-size:12px;line-height:1.5;color:#b8b2c2;margin:0 0 12px;}
+.rule-checkbox {display:flex;gap:8px;align-items:flex-start;margin:10px 0;font-size:12px;line-height:1.5;}
+.rule-checkbox input {margin:3px 0 0;accent-color:#ac6bff;}
+.rule-actions {display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
+.rule-actions button,.rule-add-result {display:inline-flex;align-items:center;gap:5px;padding:7px 9px;min-height:32px;border:1px solid #665574;border-radius:5px;background:#29232f;color:#eadff4;cursor:pointer;}
+.rule-remove {display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;color:#ffb7bf;padding:6px 0;cursor:pointer;font-size:12px;}
+.rule-actions .rule-remove {background:transparent;border:0;color:#ffb7bf;}
+.rule-editor button:disabled {opacity:.45;cursor:default;}
+.rule-editor button:hover:not(:disabled) {background:#3c2c4b;}
+.rule-editor button:focus-visible {outline:2px solid #b57aff;outline-offset:2px;}
+.rule-error {font-size:12px;line-height:1.5;color:#ffbcc2;}
+.rule-effect {padding:10px 0;border-bottom:1px solid #3b3645;margin-bottom:8px;}
+.rule-effect>summary {font-size:12px;line-height:1.5;color:#e4d4f1;cursor:pointer;overflow-wrap:anywhere;}
+.rule-effect>summary:focus-visible {outline:2px solid #b57aff;outline-offset:3px;}
+.rule-effect>div {padding-top:12px;}
+.rule-clause {padding:9px 0;border-bottom:1px solid #3b3645;}
+.rule-clause>summary {font-size:12px;line-height:1.5;color:#e4d4f1;cursor:pointer;overflow-wrap:anywhere;}
+.rule-clause>summary:focus-visible {outline:2px solid #b57aff;outline-offset:3px;}
+.rule-clause>.rule-editor {margin-bottom:4px;}

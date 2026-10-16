@@ -5,6 +5,7 @@ permissions:
 jobs:
   test:
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,4 +20,18 @@ jobs:
           Expand-Archive "$env:RUNNER_TEMP/renpy.zip" -DestinationPath ..
       - run: npm ci
       - run: npm test
-      - run: npm run build
+      - run: npm run native:test
+      - run: npm run desktop
+      - name: Verify native storage, generated branches, packaged Save/Load and ordinary game startup
+        run: npm run verify:release
+        env:
+          ISTORIYA_QA_ROOT: ${{ runner.temp }}/IstoriyaQA
+      - name: Build candidate installer
+        shell: pwsh
+        run: ./scripts/build-native-installer.ps1 -SkipBuild -OutputDirectory "$env:RUNNER_TEMP/istoriya-setup"
+      - name: Install old release, upgrade, ordinary UI startup, reinstall and uninstall without losing projects
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          node scripts/verify-hosted-installer.mjs "$env:RUNNER_TEMP/istoriya-setup/Istoriya-Rust-Setup-$version-x64.exe"
+          if ($LASTEXITCODE) { throw 'Hosted installer acceptance failed' }

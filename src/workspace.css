@@ -1,0 +1,97 @@
+/* Authoring workspace. Layout is deliberately independent of the project document. */
+html, body, #root { min-width:760px; min-height:600px; }
+.app-shell.app-shell.dock-layout { grid-template-columns:var(--dock-left) var(--dock-left-gap) minmax(0,1fr) var(--dock-right-gap) var(--dock-right); grid-template-rows:54px 40px minmax(0,1fr); grid-template-areas:"top top top top top" "workspace workspace workspace workspace workspace" "tree leftsplit main rightsplit inspector"; }
+.dock-layout .project-tree,.dock-layout .inspector { min-width:0; }
+.dock-layout .canvas-viewport {display:block;background-color:#171a22;background-image:linear-gradient(45deg,#212430 25%,transparent 25%),linear-gradient(-45deg,#212430 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#212430 75%),linear-gradient(-45deg,transparent 75%,#212430 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0;}
+.scene-pasteboard {width:max-content;min-height:max-content;box-sizing:content-box;}
+.dock-layout .game-canvas {overflow:visible;outline:1px solid #666074;background:#10121a;isolation:isolate;}
+.dock-layout .game-canvas.clip-preview {overflow:hidden;}
+.visual-scene-objects {position:absolute;inset:0;isolation:isolate;z-index:0;pointer-events:none;}
+.visual-scene-objects>button {pointer-events:auto;}
+.scene-background-clip {position:absolute;inset:0;overflow:hidden;pointer-events:none;background:#000;}
+.scene-background-clip>img {max-width:none;max-height:none;}
+.background-edit-outline {border:2px solid #e9b259;z-index:80;cursor:move;touch-action:none;}
+.background-edit-outline>span:first-child {position:absolute;left:0;top:-22px;font-size:11px;padding:3px 6px;background:#604620;color:#fff;white-space:nowrap;}
+.background-edit-outline .sprite-resize-handle {border-color:#e9b259;}
+.game-canvas:has(.background-edit-outline) .dialogue-overlay {pointer-events:none;opacity:.25;}
+.canvas-mode-button {padding:7px;border:1px solid #474050;background:#25202f;border-radius:5px;cursor:pointer;font-size:12px;}
+.canvas-mode-button[aria-pressed=true] {background:#614831;color:#ffda9c;}
+.background-controls {margin-top:12px;border-top:1px solid #3c3548;padding-top:12px;}
+.background-controls h3 {margin:0 0 12px;}.background-controls small {display:block;line-height:1.5;color:#9690a3;margin-top:10px;}
+.background-presets {display:flex;flex-wrap:wrap;gap:5px;}.background-presets button {padding:6px;border:1px solid #51415f;border-radius:4px;background:#282132;color:#dfc9f4;font-size:11px;cursor:pointer;}
+.scene-image-layer {position:absolute;display:block;padding:0;background:transparent;border:1px solid transparent;cursor:move;touch-action:none;}
+.scene-image-layer>img {width:100%;height:100%;object-fit:contain;object-position:center bottom;pointer-events:none;}
+.scene-image-layer.selected {border-color:#b877f7;}.scene-image-layer.locked {cursor:not-allowed;}
+.storyboard-thumbnail .visual-scene-objects>img.storyboard-prop {position:absolute;object-fit:contain;object-position:center bottom;}
+.game-canvas>img.timeline-cg-preview,.preview-game>img.preview-cg,.storyboard-thumbnail>img.storyboard-cg {position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1;pointer-events:none;}
+.storyboard-number,.storyboard-empty-icon {z-index:2;}
+.game-canvas .dialogue-overlay,.preview-game .preview-dialogue {z-index:2147480000;}
+.game-canvas .dialogue-overlay,.game-canvas .timeline-choice-preview {pointer-events:none;}
+.game-canvas .dialogue-overlay {padding:5% 4% 3%;min-height:24%;}
+.game-canvas .speaker-name {left:5%;top:7%;}
+.game-canvas .dialogue-overlay p {max-width:100%;}
+.game-canvas .replace-background {z-index:2147480001;}
+.scene-character-layer {z-index:10;}
+.preview-game .preview-background {max-width:none;max-height:none;}
+.preview-game {isolation:isolate;}
+.preview-game .preview-empty {z-index:2;}
+.app-shell.app-shell.dock-layout.dock-reversed { grid-template-areas:"top top top top top" "workspace workspace workspace workspace workspace" "inspector rightsplit main leftsplit tree"; }
+.dock-layout.dock-hide-left>.project-tree,.dock-layout.dock-hide-right>.inspector { display:none; }
+.dock-splitter { background:#1c202b; cursor:col-resize; touch-action:none; position:relative; z-index:3; }
+.dock-splitter:hover,.dock-splitter:focus-visible,.editor-splitter:hover { background:#8c58cc; }
+.dock-splitter-left { grid-area:leftsplit; }.dock-splitter-right { grid-area:rightsplit; }
+.editor-splitter { background:#252431; cursor:row-resize; touch-action:none; }
+.workspace-bar { grid-area:workspace; display:flex; align-items:center; gap:6px; padding:4px 14px; border-bottom:1px solid #2c2d3a; background:#171923; min-width:0; overflow:auto; }
+.workspace-bar strong { color:#818698; font-size:11px; margin-right:8px; }
+.workspace-bar button,.workspace-bar select { height:29px; border:1px solid #383a49; background:#20222d; border-radius:5px; color:#a5a9bb; font-size:12px; padding:0 9px; white-space:nowrap; cursor:pointer; }
+.workspace-bar button[aria-pressed=true] { color:#dfc5fc; background:#322340; border-color:#62427e; }
+.workspace-presets { margin-left:auto; display:flex; gap:6px; }
+.dock-layout .brand { flex:0 0 135px; width:135px; }.dock-layout .brand span { display:none; }.dock-layout .brand>div { display:block; }
+.dock-layout .project-title { min-width:0; max-width:220px; flex:0 1 190px; }.dock-layout .scene-crumb { min-width:0; }
+.dock-layout .topbar { gap:8px; }.dock-layout .more-menu { display:flex; }
+.dock-layout .canvas-toolbar { min-height:50px; height:auto; flex-basis:auto; padding:9px 12px; gap:8px; flex-wrap:wrap; }
+.dock-layout .canvas-toolbar>strong { flex:1; min-width:140px; font-size:12px; }
+.dock-layout .zoom-control { margin-left:auto; }.canvas-zoom-button { font-size:13px; padding:3px 7px; background:#212330; border:1px solid #3a3d4b; border-radius:4px; cursor:pointer; }
+.dock-layout .canvas-viewport { overflow:auto; padding:16px; place-items:safe center; }
+.dock-layout .game-canvas { max-height:none; max-width:none; flex-shrink:0; transform:none; }
+.dock-layout .replace-background { opacity:1; }
+.dock-layout .inspector-tabs button { font-size:12px; }.dock-layout .inspector-section h3 { font-size:13px; }
+.dock-layout .field>span,.dock-layout .field>label,.dock-layout .field label { font-size:12px; }
+.dock-layout .field input:not([type=range]),.dock-layout .field textarea,.dock-layout .field select { font-size:13px; min-height:34px; }
+.dock-layout .inspector-section small,.dock-layout .check-field,.dock-layout .layer-toggle-row button,.dock-layout .layer-order-row button,.dock-layout .add-layer-row button,.dock-layout .add-layer-row select { font-size:11px; }
+.dock-layout .sidebar-nav button { min-height:52px; }.dock-layout .sidebar-nav strong { font-size:13px; }.dock-layout .sidebar-nav small { font-size:10px; }
+.dock-layout .project-tree { padding-top:12px; }.dock-layout .sidebar-scene strong { font-size:12px; }
+.layers-list { padding:12px; display:flex; flex-direction:column; gap:6px; overflow:auto; min-height:0; }
+.layers-list>p { color:#8c90a1; font-size:12px; line-height:1.5; margin:0 0 8px; }
+.visual-layer { display:flex; gap:7px; align-items:center; border:1px solid #343544; background:#1c1f29; border-radius:6px; padding:5px; }
+.visual-layer.active { border-color:#a36de4; background:#2e223c; }
+.visual-layer>button { background:transparent; border:0; cursor:pointer; padding:4px; }
+.visual-layer>button:first-child { flex:1; display:flex; align-items:center; gap:9px; min-width:0; text-align:left; }
+.visual-layer img { width:38px; height:43px; object-fit:contain; background:#12151b; border-radius:4px; }
+.visual-layer span { display:flex; flex-direction:column; gap:3px; min-width:0; }.visual-layer strong { font-size:12px; overflow:hidden; text-overflow:ellipsis; }.visual-layer small { font-size:10px; color:#9a93a7; }
+.layers-empty { color:#888c9e; font-size:12px; padding:12px; }
+@media(max-width:1180px) { .dock-layout .save-state,.dock-layout .scene-crumb { display:none; }.dock-layout .project-title { margin-right:auto; }.dock-layout .button { padding:0 10px; }.workspace-bar { padding:4px 8px; }.workspace-bar strong { display:none; } }
+
+/* Scene navigation is screen space; authored object transforms stay in scene space. */
+.dock-layout .canvas-toolbar {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 8px;padding:8px 12px;container-type:inline-size;}
+.dock-layout .canvas-toolbar>strong {min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+.canvas-object-tools {grid-column:1/-1;display:flex;align-items:center;gap:6px;min-width:0;overflow-x:auto;scrollbar-width:thin;}
+.canvas-object-tools>button {display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;min-height:32px;flex-shrink:0;font-size:12px;}
+.canvas-resolution {margin-left:auto;white-space:nowrap;color:#9690a3;font-size:11px;padding-left:8px;}
+.canvas-view-controls {display:flex;align-items:center;gap:3px;min-width:0;}
+.canvas-view-controls button,.canvas-view-controls select {height:30px;flex-shrink:0;border:1px solid #3a3d4b;background:#212330;color:#e5ddec;border-radius:4px;cursor:pointer;}
+.canvas-view-controls button {min-width:28px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;}
+.canvas-view-controls select {width:75px;font-size:12px;font-variant-numeric:tabular-nums;padding:0 3px;}
+.canvas-view-controls .canvas-fit-button {padding:0 7px;font-size:12px;}
+.canvas-view-controls button:hover {background:#332b40;}
+.canvas-view-controls button[aria-pressed=true] {background:#443057;border-color:#a36de4;color:#f2e6ff;}
+.canvas-view-controls button:disabled {opacity:.4;cursor:default;}
+.canvas-view-controls button:focus-visible,.canvas-view-controls select:focus-visible {outline:2px solid #b57aff;outline-offset:2px;}
+.dock-layout .canvas-viewport {position:relative;overflow:clip;padding:0;touch-action:none;outline:none;}
+.dock-layout .canvas-viewport:focus-visible {box-shadow:inset 0 0 0 2px #b57aff;}
+.scene-pasteboard {position:absolute;padding:0;min-height:0;box-sizing:border-box;}
+.dock-layout .canvas-viewport .game-canvas {border:0;}
+.canvas-viewport.can-pan,.canvas-viewport.can-pan .scene-character-layer,.canvas-viewport.can-pan .scene-image-layer,.canvas-viewport.can-pan .background-edit-outline,.canvas-viewport.can-pan .sprite-resize-handle {cursor:grab;}
+.canvas-viewport.is-panning,.canvas-viewport.is-panning .scene-character-layer,.canvas-viewport.is-panning .scene-image-layer {cursor:grabbing;user-select:none;}
+.canvas-viewport .sprite-resize-handle {width:clamp(4px,20%,12px);height:auto;aspect-ratio:1;}
+@container (max-width:520px) {.canvas-object-tools .canvas-resolution {display:none;}}

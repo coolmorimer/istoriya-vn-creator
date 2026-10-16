@@ -1,0 +1,64 @@
+import {pixelRect} from './game-ui.mjs';
+import {SYSTEM_SCREENS} from './system-ui.mjs';
+export function systemUiScript(project,layout,assetMap,{quote,box,textStyle,image,backgrounds,pressKeys}){
+ const w=project.meta.resolution.width,h=project.meta.resolution.height,lines=[];
+ const literal=value=>quote(String(value).replaceAll('{','{{'));
+ const fixedButton=(object,id,action)=>{const r=pixelRect(object.rect,w,h);return ['    button:',`        id ${quote(id)}`,`        action ${action}`,`        hovered SetScreenVariable("_istoriya_hover", ${quote(id)})`,'        unhovered [SetScreenVariable("_istoriya_hover", None), SetScreenVariable("_istoriya_pressed", None)]',...box(object.rect),'        padding (12, 0)',...backgrounds(object,r.w,r.h,'        ',`_istoriya_pressed == ${quote(id)}`),`        text ${literal(object.label)}:`,`            xalign ${object.align==='center'?'0.5':object.align==='right'?'1.0':'0.0'}`,'            yalign 0.5',...textStyle(object,'            ')];};
+ lines.push('init python:','    def _istoriya_playtime(seconds):','        seconds = int(seconds or 0)','        return "%02d:%02d:%02d" % (seconds // 3600, seconds // 60 % 60, seconds % 60)','','');
+ lines.push('init python:','    def _istoriya_ui_literal(value):','        return str(value).replace("{", "{{")','');
+ const translations={'Yes':'Да','No':'Нет','Are you sure?':'Вы уверены?','Are you sure you want to delete this save?':'Удалить это сохранение?','Are you sure you want to overwrite your save?':'Перезаписать это сохранение?','Loading will lose unsaved progress.\nAre you sure you want to do this?':'Несохранённый прогресс будет потерян.\nЗагрузить сохранение?','Are you sure you want to quit?':'Выйти из игры?','Are you sure you want to return to the main menu?\nThis will lose unsaved progress.':'Вернуться в главное меню?\nНесохранённый прогресс будет потерян.','Are you sure you want to continue where you left off?':'Продолжить с последнего сохранения?','Are you sure you want to end the replay?':'Завершить повтор?','Are you sure you want to begin skipping?':'Начать пропуск текста?','Are you sure you want to skip to the next choice?':'Пропустить до следующего выбора?','Are you sure you want to skip unseen dialogue to the next choice?':'Пропустить непрочитанные реплики до следующего выбора?','This save was created on a different device. Maliciously constructed save files can harm your computer. Do you trust this save\'s creator and everyone who could have changed the file?':'Это сохранение создано на другом устройстве. Вредоносное сохранение может повредить компьютер. Вы доверяете его автору и всем, кто мог изменить файл?','Do you trust the device the save was created on? You should only choose yes if you are the device\'s sole user.':'Вы доверяете устройству, на котором создано сохранение? Отвечайте «Да», только если вы его единственный пользователь.'};
+ lines.push('translate None strings:');for(const [from,to]of Object.entries(translations))lines.push(`    old ${quote(from)}`,`    new ${quote(to)}`);lines.push('');
+ if(layout.pause.enabled)lines.push('define _game_menu_screen = "istoriya_pause"','');
+ for(const [screen]of SYSTEM_SCREENS){const page=layout[screen];if(!page.enabled)continue;
+  if(screen==='notify'){
+   const r=pixelRect(page.content.rect,w,h),content=page.content;
+   lines.push('screen notify(message, duration=None):','    zorder 150','    frame:','        id "istoriya_notify"',...box(content.rect),'        padding (12, 8)',`        background Transform(${image(content.resourceId,r.w,r.h,content.backgroundColor)}, alpha=${content.opacity/100})`,'        text _istoriya_ui_literal(message):','            id "istoriya_notification_text"',`            xsize ${Math.max(1,r.w-24)}`,...textStyle(content,'            '),`    timer (${page.duration} if duration is None else max(0.5, min(60.0, float(duration)))) action Hide("notify")`,'');continue;
+  }
+  const name=screen==='pause'?'istoriya_pause':screen==='gallery'?'istoriya_gallery':screen;
+  lines.push(`screen ${name}():`,'    tag menu','    default _istoriya_hover = None','    default _istoriya_pressed = None',`    add ${image(page.resourceId,w,h,page.backgroundColor)}`);
+  if(page.title.visible)lines.push(`    text ${literal(page.title.label)}:`,'        id "istoriya_system_title"',...box(page.title.rect),...textStyle(page.title));
+  lines.push(...fixedButton(page.back,'istoriya_system_back','Return()'));
+  if(screen==='pause'){
+   const actions={save:'ShowMenu("save")',load:'ShowMenu("load")',preferences:'ShowMenu("preferences")',history:'ShowMenu("history")',gallery:'ShowMenu("istoriya_gallery")',main_menu:'MainMenu(confirm=True)',quit:'Quit(confirm=True)'};
+   for(const b of page.buttons.filter(b=>b.visible))lines.push(...fixedButton(b,`istoriya_pause_${b.id}`,actions[b.id]));
+  }else{
+   const content=page.content,r=pixelRect(content.rect,w,h),gap=Math.round(content.spacing*h/100),bodyFont=assetMap.get(content.font)??content.font;
+   lines.push('    viewport:','        id "istoriya_system_content"',...box(content.rect),'        mousewheel True','        draggable False',...(screen==='history'?['        yinitial 1.0']:[]),'        scrollbars "vertical"','        vscrollbar_unscrollable "hide"');
+   if(['save','load'].includes(screen)){
+    const columns=content.columns,rows=content.rows,cellW=Math.floor((r.w-(columns-1)*gap)/columns),cellH=Math.floor((r.h-(rows-1)*gap)/rows);
+    lines.push(`        grid ${columns} ${rows}:`,`            spacing ${gap}`,`            for slot in range(1, ${columns*rows+1}):`,'                button:','                    id ("istoriya_slot_" + str(slot))','                    action FileAction(slot)','                    hovered SetScreenVariable("_istoriya_hover", str(slot))','                    unhovered [SetScreenVariable("_istoriya_hover", None), SetScreenVariable("_istoriya_pressed", None)]',`                    xsize ${cellW}`,`                    ysize ${cellH}`,'                    padding (10, 8)',...backgrounds(page.button,cellW,cellH,'                    ','_istoriya_pressed == str(slot)'),`                    key "save_delete" action FileDelete(slot)`,'                    vbox:','                        spacing 4','                        add Transform(FileScreenshot(slot), xysize=('+Math.max(1,cellW-20)+', '+Math.max(1,cellH-2*page.button.size-30)+'), fit="contain")','                        text FileTime(slot, format="%d.%m.%Y %H:%M", empty="Пустой слот"):','                            id ("istoriya_slot_time_" + str(slot))',...textStyle(page.button,'                            '),'                        if FileLoadable(slot):','                            text _istoriya_playtime(FileJson(slot, "_game_runtime", missing=0)):','                                id ("istoriya_slot_playtime_" + str(slot))',...textStyle(page.button,'                                '));
+    const pr=pixelRect(page.pages.rect,w,h),small=Math.max(1,Math.floor(pr.w/13));
+    lines.push('    hbox:',...box(page.pages.rect),'        spacing 0');
+    const pageButton=(caption,action)=>lines.push(`        textbutton ${quote(caption)} action ${action}:`,`            xsize ${small}`,...textStyle(page.pages,'            ','text_'));
+    pageButton('Назад','FilePagePrevious()');pageButton('Авто','FilePage("auto")');pageButton('Быстр.','FilePage("quick")');
+    lines.push('        for page_number in range(1, 10):','            textbutton str(page_number) action FilePage(page_number):',`                xsize ${small}`,...textStyle(page.pages,'                ','text_'));pageButton('Вперёд','FilePageNext()');
+   }else{
+    lines.push('        vbox:',`            spacing ${gap}`,`            xsize ${Math.max(1,r.w-20)}`);
+    const contentText=(text,id,indent='            ')=>lines.push(`${indent}text ${text}:`,...(id?[`${indent}    id ${Array.isArray(id)?id[0]:quote(id)}`]:[]),`${indent}    xmaximum ${Math.max(1,r.w-20)}`,...textStyle(page.button??content,indent+'    '));
+    if(screen==='history'){
+     lines.push('            if not _history_list:');contentText('"История пока пуста."',null,'                ');
+     lines.push('            for entry in _history_list:','                vbox:','                    spacing 4','                    if entry.who:');contentText('entry.who',null,'                        ');contentText('renpy.filter_text_tags(entry.what, allow=gui.history_allow_tags)',null,'                    ');
+    }
+    if(screen==='preferences'){
+     const options=page.options,barOptions=[['music','Громкость музыки','music volume'],['sound','Громкость звуков','sound volume'],['voice','Громкость голосов','voice volume'],['text','Скорость текста','text speed'],['auto','Скорость автоперехода','auto-forward time']];
+     for(const [id,label,preference]of barOptions)if(options[id]){contentText(quote(label));lines.push('            bar:',`                id ${quote('istoriya_preference_'+id)}`,`                value Preference(${quote(preference)})`,`                xsize ${Math.max(1,r.w-24)}`,'                ysize 28',`                left_bar Solid(${quote(page.button.hoverColor)})`,`                right_bar Solid(${quote(page.button.backgroundColor)})`,`                thumb Transform(Solid(${quote(page.button.color)}), xysize=(14, 28))`);}
+     const prefButton=(caption,action,id)=>lines.push(`            textbutton ${quote(caption)} action ${action}:`,`                id ${quote('istoriya_preference_'+id)}`,...textStyle(page.button,'                ','text_'));
+     if(options.display){prefButton('В окне','Preference("display", "window")','window');prefButton('Полный экран','Preference("display", "fullscreen")','fullscreen');}
+     if(options.resolution){contentText('"Размер окна"');for(const [width,height]of [[1280,720],[1600,900],[1920,1080]])prefButton(`${width} × ${height}`,`[Preference("display", "window"), Function(renpy.set_physical_size, (${width}, ${height}))]`,`size_${width}`);}
+     if(options.skipSeen)prefButton('Пропускать только прочитанное','Preference("skip", "seen")','skip_seen');if(options.skipAll)prefButton('Пропускать весь текст','Preference("skip", "all")','skip_all');
+     if(!Object.values(options).some(Boolean))contentText('"Нет доступных настроек."');
+    }
+    if(screen==='gallery'){
+     const columns=content.columns,cellW=Math.floor((r.w-20-(columns-1)*gap)/columns),cellH=Math.round(content.cardHeight*h/100);
+     lines.push('            if not istoriya_gallery_data:');contentText('"В галерее пока нет изображений."',null,'                ');
+     lines.push('            for section_index, section in enumerate(istoriya_gallery_data):');contentText('_istoriya_ui_literal(section["title"])',['("istoriya_gallery_section_" + str(section_index))'],'                ');
+     lines.push(`                for row_start in range(0, len(section["items"]), ${columns}):`,'                    hbox:',`                        spacing ${gap}`,`                        for item in section["items"][row_start:row_start+${columns}]:`,'                            button:','                                id ("istoriya_gallery_" + item["id"])','                                sensitive (item["always"] or item["id"] in persistent.istoriya_gallery_unlocked)','                                action Show("istoriya_gallery_viewer", image_path=item["image"])','                                hovered SetScreenVariable("_istoriya_hover", item["id"])','                                unhovered [SetScreenVariable("_istoriya_hover", None), SetScreenVariable("_istoriya_pressed", None)]',`                                xsize ${cellW}`,`                                ysize ${cellH}`,'                                padding (10, 8)',...backgrounds(page.button,cellW,cellH,'                                ','_istoriya_pressed == item["id"]'),'                                vbox:','                                    spacing 4','                                    if item["always"] or item["id"] in persistent.istoriya_gallery_unlocked:',`                                        add Transform(item["image"], xysize=(${Math.max(1,cellW-20)}, ${Math.max(1,cellH-page.button.size-24)}), fit="contain")`,'                                        text _istoriya_ui_literal(item["title"]):',...textStyle(page.button,'                                            '),'                                    else:');
+     if(page.button.lockedResourceId)lines.push(`                                        add ${image(page.button.lockedResourceId,Math.max(1,cellW-20),Math.max(1,cellH-page.button.size-24),'#302d35')}`);
+     lines.push(`                                        text ${literal(page.button.label)}:`,...textStyle(page.button,'                                            '));
+    }
+   }
+  }
+  lines.push(...pressKeys(),'    key "game_menu" action Return()','');
+ }
+ return lines.join('\n')+'\n';
+}

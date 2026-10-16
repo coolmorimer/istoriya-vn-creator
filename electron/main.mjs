@@ -5,9 +5,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUILD_TARGETS, buildGame, runPreview } from "../runtime/builder.mjs";
 import { atomicWrite, createDiskStorage, portableProject, writeFolderProject, readFolderProject } from "./project-storage.mjs";
+import { safeProjectId } from '../runtime/project-path.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let mainWindow;
+if (!app.requestSingleInstanceLock()) app.exit(0);
+app.on('second-instance', () => {
+  if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus(); }
+});
 const storage = createDiskStorage(path.join(app.getPath("userData"), "projects"));
 const locationsFile = path.join(app.getPath("userData"), "project-locations.json");
 let locations = {};
@@ -55,10 +60,6 @@ function runtimePaths() {
     return { sdkPath: path.join(process.resourcesPath, "renpy-sdk"), assetsRoot: path.join(process.resourcesPath, "public") };
   }
   return { sdkPath: path.resolve(appRoot, "..", "renpy-8.5.3-sdk"), assetsRoot: path.join(appRoot, "public") };
-}
-
-function safeProjectId(project) {
-  return String(project.id || project.meta?.title || "project").replace(/[^a-zA-Z0-9_.-]+/g, "-").slice(0, 80) || "project";
 }
 
 async function detectJavaHome() {
@@ -114,7 +115,8 @@ function createWindow() {
   else window.loadFile(path.join(appRoot, "dist", "client", "index.html"));
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => {
-    if (!url.startsWith("file:") && !url.startsWith("http://localhost:")) event.preventDefault();
+    // This is a local SPA. No document navigation should inherit the preload bridge.
+    event.preventDefault();
   });
 }
 
@@ -135,7 +137,7 @@ ipcMain.handle("game:build", async (_event, { project, platform }) => {
   const selection = await dialog.showOpenDialog({ title: `Выберите папку для сборки ${target.label}`, properties: ["openDirectory", "createDirectory"] });
   if (selection.canceled || !selection.filePaths[0]) return { canceled: true };
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const workDir = path.join(app.getPath("userData"), "build-work", `${project.id || "project"}-${platform}-${stamp}`);
+  const workDir = path.join(app.getPath("userData"), "build-work", `${safeProjectId(project)}-${platform}-${stamp}`);
   const androidKeyDir = path.join(app.getPath("userData"), "android-keys", safeProjectId(project));
   const javaHome = platform === "android" ? await detectJavaHome() : null;
   const result = await buildGame(project, platform, { ...runtimePaths(), outputDir: selection.filePaths[0], workDir, androidKeyDir, javaHome });

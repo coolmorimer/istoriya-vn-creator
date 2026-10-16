@@ -1,0 +1,17 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {createProject} from '../src/domain/projectFactory.js';
+import {solidPng} from './qa-png.mjs';
+import {compileProject} from '../runtime/compiler.mjs';
+import {validateProject} from '../src/domain/validator.js';
+const p=createProject({title:'Интерфейс — QA',resolution:{width:1280,height:720}});p.id='game_ui_qa';p.ui.textStyle={speed:0};
+p.resources=[['skin',[30,140,70,255]],['hover',[160,70,180,255]],['pressed',[230,90,30,255]],['disabled',[70,70,70,255]],['portrait',[50,140,220,255]]].map(([id,color])=>({id,name:id,category:id==='portrait'?'sprite':'ui',mime:'image/png',source:`data:image/png;base64,${solidPng(64,64,color).toString('base64')}`}));
+p.characters=[{id:'hero',name:'Героиня',color:'#d9a3ff',portraitResourceId:'portrait',sprites:[{id:'main',name:'Основной',resourceId:'portrait'}],defaultSpriteId:'main'}];
+const first=Object.values(p.scenes)[0];first.id='first';first.title='Начало';first.actions=[{id:'first-line',type:'dialogue',speakerId:'hero',text:'ui-first'},{id:'second-line',type:'narration',text:'ui-second'},{id:'choice',type:'choice',prompt:'Выберите путь',options:[{id:'go',text:'Открыть дверь',targetSceneId:'end',effects:[]},{id:'stay',text:'Остаться',targetSceneId:'end',effects:[]}]}];
+p.scenes={first,end:{id:'end',title:'Конец',characters:[],actions:[{id:'end-line',type:'narration',text:'ui-end'},{id:'finish',type:'end'}]}};p.chapters[0].scenes=['first','end'];
+const button=p.ui.layout.menu.buttons.find(b=>b.id==='start');Object.assign(button,{label:'Начать путешествие',rect:{x:60,y:40,w:32,h:8},idleResourceId:'skin',hoverResourceId:'hover',pressedResourceId:'pressed',disabledResourceId:'disabled'});p.ui.layout.menu.buttons.find(b=>b.id==='continue').visible=true;
+p.ui.layout.dialogue.portrait.visible=true;
+const checked=validateProject(p);if(!checked.valid)throw Error(JSON.stringify(checked.issues));
+const base=path.join(process.env.LOCALAPPDATA,'IstoriyaQA');await fs.mkdir(base,{recursive:true});const root=await fs.mkdtemp(path.join(base,'ui-authoring-'));
+const project=path.join(root,'fixture.vnproject');await fs.writeFile(project,JSON.stringify(p));await compileProject(p,path.join(root,'project'),{sdkPath:path.resolve('../renpy-8.5.3-sdk'),assetsRoot:path.resolve('public')});
+await fs.writeFile('.artifacts/ui-authoring-location.json',JSON.stringify({root,project},null,2));console.log(JSON.stringify({root,project},null,2));

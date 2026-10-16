@@ -1,3 +1,8 @@
+import { timelineClips } from './timeline-model.mjs';
+export function storyActions(scene) {
+  return scene.timelineEnabled ? timelineClips(scene).filter(c=>c.enabled).sort((a,b)=>a.start-b.start||a.index-b.index).map(c=>c.action) : scene.actions ?? [];
+}
+
 export function chapterEntry(project, id) {
   const chapter = project.chapters.find(c => c.id === id);
   return chapter?.scenes.includes(chapter.entrySceneId) ? chapter.entrySceneId : chapter?.scenes.find(id => project.scenes[id]) ?? null;
@@ -13,10 +18,11 @@ export function resolveStoryProject(source) {
   const project = structuredClone(source ?? {});
   project.chapters ??= [];
   project.scenes ??= {};
-  for (const scene of Object.values(project.scenes)) for (const action of scene.actions ?? []) {
+  for (const scene of Object.values(project.scenes)) {for(const layer of scene.images??[])for(const reaction of layer.interactions??[])if(reaction.targetChapterId)reaction.targetSceneId=targetScene(project,reaction);for (const action of scene.actions ?? []) {
     if (action.type === 'jump') action.targetSceneId = targetScene(project, action);
     if (action.type === 'condition') for (const field of ['trueSceneId','falseSceneId']) action[field] = targetScene(project, action, field);
     for (const option of action.options ?? []) option.targetSceneId = targetScene(project, option);
+  }
   }
   return project;
 }

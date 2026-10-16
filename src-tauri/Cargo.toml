@@ -1,0 +1,25 @@
+[package]
+name = "istoriya"
+version = "0.2.32"
+edition = "2021"
+description = "История — конструктор визуальных новелл"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = "0.15"
+base64 = "0.22"
+sha2 = "0.10"
+url = "2"
+dunce = "1"
+tempfile = "3"
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1

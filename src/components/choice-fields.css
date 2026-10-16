@@ -1,0 +1,12 @@
+.choice-authoring .field {margin:10px 0;}
+.choice-authoring .field>span {font-size:12px;}
+.choice-authoring .field input,.choice-authoring .field select,.choice-authoring .field textarea {min-height:34px;font-size:12px;padding:7px;}
+.choice-authoring .choice-option {padding:10px;}
+.choice-authoring .choice-option>header {display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.choice-authoring .choice-option>header strong {font-size:12px;}
+.choice-authoring .choice-branch-button {display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:auto;min-height:34px;padding:7px;border:1px solid #655176;border-radius:5px;background:#282133;color:#e6d2f8;font-size:12px;}
+.choice-authoring .choice-branch-button:hover {background:#372b46;}
+.choice-authoring button:focus-visible,.choice-authoring summary:focus-visible {outline:2px solid #b57aff;outline-offset:2px;}
+.choice-authoring details {margin-top:12px;}
+.choice-authoring summary {cursor:pointer;font-size:12px;color:#cfb5e5;}
+.choice-author-error {color:#ffbcc2;font-size:12px;line-height:1.5;}

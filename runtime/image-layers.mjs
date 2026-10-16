@@ -1,0 +1,3 @@
+import {layerZOrder} from './visual-order.mjs';
+export function sceneImages(scene) {return (scene.images??[]).map((layer,index)=>({id:`image_${index}`,name:'Изображение',x:50,y:100,width:60,height:45,scale:100,rotation:0,opacity:100,visible:true,locked:false,...layer,zOrder:layerZOrder(layer.zOrder,50+index),_stackOrder:(scene.characters?.length??0)+index+1,kind:'image'}));}
+export function imageLayerStyle(layer) {return {left:`${layer.x}%`,top:`${layer.y}%`,width:`${layer.width}%`,height:`${layer.height}%`,opacity:layer.opacity/100,zIndex:layer.zOrder,transformOrigin:'50% 100%',transform:`translate(-50%,-100%) rotate(${layer.rotation}deg) scale(${(layer.flip?-1:1)*layer.scale/100},${layer.scale/100})`};}

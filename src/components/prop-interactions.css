@@ -1,0 +1,30 @@
+.prop-interaction-fields {margin-top:20px;padding-top:16px;border-top:1px solid #3b3645;}
+.prop-interaction-fields>p,.prop-interaction-fields>small {display:block;line-height:1.5;color:#b8b2c2;font-size:12px;}
+.prop-reaction {border-bottom:1px solid #3b3645;padding:12px 0;margin-bottom:12px;}
+.prop-reaction>summary {color:#eadcf8;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:12px;}
+.prop-advanced {margin:14px 0;}
+.prop-advanced>summary {cursor:pointer;font-size:12px;color:#d8c4ec;margin-bottom:12px;}
+.prop-checkbox {display:flex;align-items:flex-start;gap:8px;line-height:1.5;font-size:12px;margin:12px 0;}
+.prop-checkbox input {accent-color:#ac6bff;margin-top:3px;}
+.prop-remove-reaction {display:flex;align-items:center;gap:6px;padding:6px 0;border:0;background:transparent;color:#ffb7bf;cursor:pointer;}
+.prop-remove-reaction:focus-visible,.prop-reaction summary:focus-visible,.prop-advanced summary:focus-visible {outline:2px solid #b57aff;outline-offset:3px;}
+.prop-explore-link {margin-top:10px;}
+.prop-item-problem {margin:10px 0;color:#ffb7bf;font-size:14px;line-height:1.5;overflow-wrap:anywhere;}
+.scene-interaction-list {margin-top:24px;padding-top:18px;border-top:1px solid #3b3645;font-size:14px;}
+.scene-interaction-list>header {display:flex;flex-direction:column;align-items:stretch;gap:10px;margin-bottom:16px;}
+.scene-interaction-list h3 {margin:0;font-size:14px;}
+.scene-interaction-list>p {color:#c8c1d1;line-height:1.6;overflow-wrap:anywhere;}
+.scene-interaction-list ul {list-style:none;margin:0;padding:0;}
+.scene-interaction-list li {padding:14px 0;border-bottom:1px solid #3b3645;}
+.scene-interaction-object {display:flex;align-items:flex-start;gap:10px;min-width:0;}
+.scene-interaction-object>img,.scene-interaction-object>svg {flex:0 0 40px;width:40px;height:40px;object-fit:contain;}
+.scene-interaction-object>div {display:grid;gap:4px;min-width:0;overflow-wrap:anywhere;}
+.scene-interaction-object strong {font-size:14px;line-height:1.5;}
+.scene-interaction-object span {color:#c8c1d1;font-size:12px;line-height:1.5;}
+.scene-interaction-object small {color:#ffd09c;font-size:12px;line-height:1.5;}
+.scene-interaction-buttons {display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+.scene-interaction-list button:not(.button) {display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:6px 10px;border:1px solid #51445f;border-radius:5px;background:#211c2a;color:#e9d9fa;font:inherit;font-size:12px;cursor:pointer;}
+.scene-interaction-list button:focus-visible {outline:2px solid #b57aff;outline-offset:3px;}
+.scene-interaction-list button:not(.button):hover:not(:disabled) {background:#362846;}
+.scene-interaction-list button:disabled {opacity:.5;cursor:default;}
+.scene-interaction-pages {display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:14px;font-size:12px;font-variant-numeric:tabular-nums;}

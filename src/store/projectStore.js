@@ -1,25 +1,47 @@
+import { assertProjectShape } from "../../runtime/project-format.mjs";
+import { ASSET_FIELDS } from '../../runtime/asset-fields.mjs';
 import { create } from "zustand";
 import { defaultProject, createId } from "../data/defaultProject.js";
 import { createProject } from "../domain/projectFactory.js";
 import { connectScenes, updateExit, removeExit, renumberScenes } from "../domain/storyGraph.js";
 import { materializeTimeline, timelineClips, roundTime, canSplitClip } from '../../runtime/timeline-model.mjs';
+import {sequentialActions} from '../domain/storyboard.js';
+import {editProject,replayProject,cloneDraft,HISTORY_LIMIT} from '../domain/projectHistory.js';
+import {authorCharacterForScene} from '../domain/characterAuthoring.js';
+import {authorBackground} from '../domain/backgroundAuthoring.js';
+import {authorProp,addPropReaction,changePropReaction} from '../domain/propAuthoring.js';
+import {authorPropReaction} from '../domain/reactionAuthoring.js';
+import {authorChoiceBranch} from '../domain/branchAuthoring.js';
+import {authorAudioAttachment} from '../domain/audioAuthoring.js';
+import {logicReferences} from '../../runtime/logic-references.mjs';
+import {authorUi} from '../domain/uiAuthoring.js';
+import {authorFont} from '../domain/fontAuthoring.js';
+import {authorMediaRepairs,authorMediaImports} from '../domain/mediaRepair.js';
+import {clearUiResource} from '../../runtime/game-ui.mjs';
+import {editorNavigation} from '../domain/editorNavigation.js';
 
 const STORAGE_KEY = "istoriya-project-v2";
 const LIBRARY_KEY = "istoriya-project-library-v1";
 const DRAFT_KEY = "istoriya-project-recovery-v1";
-const CURRENT_SCHEMA = 2;
+const CURRENT_SCHEMA = 6;
+let saveQueue=Promise.resolve();
+let startupWarning = null;
+let startupRecovery = null;
 const projectStorage = globalThis.window?.istoriya?.storage ?? globalThis.localStorage;
 // Keep existing browser-backed desktop projects when upgrading to disk storage.
-if (globalThis.window?.istoriya?.storage && globalThis.localStorage) {
+if (globalThis.window?.istoriya?.storage && window.istoriya.native!=='browser' && globalThis.localStorage) {
+  try {
   for (const key of [STORAGE_KEY, LIBRARY_KEY, DRAFT_KEY]) {
     if (!projectStorage.getItem(key)) {
       const previous = localStorage.getItem(key);
       if (previous) projectStorage.setItem(key, previous);
     }
   }
+  } catch (error) { startupWarning = error.message; }
 }
 
 export function normalizeProject(source) {
+  assertProjectShape(source);
   if (!source || typeof source !== "object" || !source.scenes || typeof source.scenes !== "object") {
     throw new Error("Файл не похож на проект «История».");
   }
@@ -27,12 +49,13 @@ export function normalizeProject(source) {
   // Old browser projects used root-relative URLs, which point outside the app in file:// builds.
   const migrateAssets = (value) => {
     for (const [key, child] of Object.entries(value)) {
-      if (typeof child === "string" && child.startsWith("/assets/")) value[key] = `.${child}`;
+      if (ASSET_FIELDS.has(key) && typeof child === "string" && child.startsWith("/assets/")) value[key] = `.${child}`;
       else if (child && typeof child === "object") migrateAssets(child);
     }
   };
   migrateAssets(project);
   project.schemaVersion = CURRENT_SCHEMA;
+  project.items??=[];
   project.id ||= createId("project");
   project.meta = {
     ...structuredClone(defaultProject.meta),
@@ -105,66 +128,105 @@ export function normalizeProject(source) {
 }
 
 function loadProject() {
+  let stored;
   try {
     const raw = projectStorage.getItem(STORAGE_KEY);
-    const stored = raw ? JSON.parse(raw) : createProject();
+    stored = normalizeProject(raw ? JSON.parse(raw) : createProject());
+  } catch (error) { startupWarning = error.message;stored=normalizeProject(createProject()); }
+  try {
     const recoveryRaw = projectStorage.getItem(DRAFT_KEY);
     if (recoveryRaw) {
-      const recovery = JSON.parse(recoveryRaw);
-      const storedTime = Date.parse(stored.meta?.modifiedAt ?? 0) || 0;
-      if (Date.parse(recovery.savedAt) > storedTime && window.confirm("Обнаружена более новая автоматически сохранённая версия проекта. Восстановить её?")) return normalizeProject(recovery.project);
-      projectStorage.removeItem(DRAFT_KEY);
+      // Reading does not choose, delete or acknowledge either version. In
+      // particular, opening the hub must not replace a recovered active draft.
+      try {
+        const recovery=JSON.parse(recoveryRaw);
+        if(!Number.isFinite(Date.parse(recovery.savedAt)))throw Error('Не удалось прочитать дату черновика.');
+        const project=normalizeProject(recovery.project),library=loadLibrary();
+        const saved=stored.id===project.id?stored:library.find(p=>p.id===project.id)??null;
+        startupRecovery={raw:recoveryRaw,project,saved,savedAt:recovery.savedAt,selection:recovery.selection??null,busy:false,error:null};
+      } catch(error) {startupRecovery={raw:recoveryRaw,project:null,saved:stored,savedAt:null,busy:false,error:`Черновик не удалось открыть: ${error.message}`};}
     }
-    return normalizeProject(stored);
-  } catch {
-    return normalizeProject(createProject());
-  }
+  } catch(error) {startupWarning=error.message;}
+  return stored;
 }
 
-function loadLibrary() {
+function loadLibrary(strict = false) {
   try {
     const raw = projectStorage.getItem(LIBRARY_KEY);
-    if (raw) return JSON.parse(raw).map(normalizeProject);
-  } catch {
-    // A damaged library must not prevent the editor from opening.
+    if (raw) {
+      const library = JSON.parse(raw);
+      if (!Array.isArray(library)) throw new Error("Библиотека проектов повреждена. Сохранение остановлено, чтобы не потерять проекты.");
+      return library.map(normalizeProject);
+    }
+  } catch (error) {
+    startupWarning = error.message;
+    if (strict) throw new Error("Не удалось прочитать библиотеку: " + error.message);
   }
   return [];
 }
 
-function persistProject(project) {
+async function persistProject(project) {
+  // Read before any writes. A corrupt library must never become an empty one.
+  const library = loadLibrary(true).filter((item) => item.id !== project.id);
+  const previous = projectStorage?.getItem(STORAGE_KEY);
+  if (previous) normalizeProject(JSON.parse(previous));
   const saved = structuredClone(project);
   saved.meta.modifiedAt = new Date().toISOString();
   projectStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
-  const library = loadLibrary().filter((item) => item.id !== saved.id);
   const nextLibrary = [saved, ...library];
   projectStorage.setItem(LIBRARY_KEY, JSON.stringify(nextLibrary));
+  await projectStorage.flush?.();
   return nextLibrary;
 }
 
-function withHistory(set, recipe) {
+function withHistory(set, recipe, selectAfter) {
   set((state) => {
-    const next = structuredClone(state.project);
-    recipe(next);
+    if(state.recovery)return state;
+    const edit = editProject(state.project,recipe);
+    if (!edit) return state;
+    const view=selectAfter?.(edit.project);
+    if(view){edit.entry.beforeSelection=Object.fromEntries(Object.keys(view).map(key=>[key,state[key]]));edit.entry.afterSelection=view;}
     return {
-      project: next,
-      past: [...state.past.slice(-49), state.project],
+      project: edit.project,
+      past: [...state.past.slice(-(HISTORY_LIMIT-1)), edit.entry],
       future: [],
       saveState: "saving",
+      ...view,
     };
   });
 }
 
 function selectionFor(project) {
   const activeSceneId = project.chapters.flatMap((chapter) => chapter.scenes).find((id) => project.scenes[id]) ?? Object.keys(project.scenes)[0];
-  return { activeSceneId, activeActionId: null, activeLayerId: null, selectedCharacterId: project.characters[0]?.id ?? null, selectedResourceId: project.resources[0]?.id ?? null, activeSection: "scenes", inspectorTab: "properties", bottomTab: "scenario" };
+  const activeActionId=project.scenes[activeSceneId].timelineEnabled?null:project.scenes[activeSceneId].actions[0]?.id??null;
+  return { activeSceneId, activeActionId, activeLayerId: null, selectedCharacterId: project.characters[0]?.id ?? null, selectedResourceId: project.resources[0]?.id ?? null, activeSection: "scenes", inspectorTab: "properties", bottomTab: "scenario",timelineTime:0,navigationTarget:null,uiScreen:'menu',uiElement:'button:start' };
+}
+function selectionAfterHistory(state,project) {
+ const scene=project.scenes[state.activeSceneId];
+ if(!scene)return selectionFor(project);
+ const activeLayerId=state.activeLayerId==='__background'||[...(scene.characters??[]),...(scene.images??[]),...scene.actions].some(item=>item.id===state.activeLayerId)?state.activeLayerId:null;
+ return {
+  activeActionId:scene.actions.some(a=>a.id===state.activeActionId)?state.activeActionId:(!scene.timelineEnabled&&!activeLayerId?scene.actions[0]?.id??null:null),
+  activeLayerId,
+  selectedCharacterId:project.characters.some(c=>c.id===state.selectedCharacterId)?state.selectedCharacterId:project.characters[0]?.id??null,
+  selectedResourceId:project.resources.some(r=>r.id===state.selectedResourceId)?state.selectedResourceId:project.resources[0]?.id??null,
+ };
 }
 const initialProject = loadProject();
 export const useProjectStore = create((set, get) => ({
   project: initialProject,
+  recovery: startupRecovery,
   projects: loadLibrary(),
   activeSection: "scenes",
+  navigationRequest:0,
+  navigationTarget:null,
+  navigateTo: location=>{if(get().recovery)throw Error('Сначала выберите сохранённую версию проекта.');const plan=editorNavigation(get().project,location);set({...plan,navigationRequest:get().navigationRequest+1});return plan;},
   ...selectionFor(initialProject),
   inspectorTab: "properties",
+  logicTab: 'map',
+  selectedInventoryId: null,
+  setLogicTab: logicTab => set({logicTab}),
+  setSelectedInventory: selectedInventoryId => set({selectedInventoryId}),
   bottomTab: "scenario",
   timelineTime: 0,
   setTimelineTime: (timelineTime) => set({timelineTime:Math.max(0,timelineTime)}),
@@ -181,7 +243,7 @@ export const useProjectStore = create((set, get) => ({
     const action=scene.actions.find(a=>a.id===actionId);if(!action)return;
     if(action.timeline.locked || !canSplitClip(action))return;
     const t=action.timeline;if(time<=t.start+.1||time>=t.start+t.duration-.1)return;
-    const copy=structuredClone(action);copy.id=createId('act');copy.timeline.start=roundTime(time);copy.timeline.duration=roundTime(t.start+t.duration-time);t.duration=roundTime(time-t.start);
+    const copy=cloneDraft(action);copy.id=createId('act');copy.timeline.start=roundTime(time);copy.timeline.duration=roundTime(t.start+t.duration-time);t.duration=roundTime(time-t.start);
     if(['dialogue','narration'].includes(action.type))t.waitForClick=false;
     if(copy.options)copy.options=copy.options.map(o=>({...o,id:createId('choice')}));
     scene.actions.push(copy);scene.actions.sort((a,b)=>a.timeline.start-b.timeline.start);
@@ -190,31 +252,76 @@ export const useProjectStore = create((set, get) => ({
     const scene=project.scenes[sceneId];materializeTimeline(scene);
     for(const clip of timelineClips(scene))if(clip.track===track)clip.action.timeline[key]=value;
   }),
-  zoom: 100,
-  saveState: "saved",
+  saveState: startupWarning ? "error" : "saved",
+  saveError: startupWarning,
   past: [],
   future: [],
 
+  resolveRecovery: decision => {
+    if(!['restore','saved'].includes(decision))return Promise.reject(Error('Выберите версию проекта.'));
+    const recovery=get().recovery;if(!recovery||recovery.busy)return Promise.resolve(false);
+    if(decision==='restore'&&!recovery.project)return Promise.resolve(false);
+    clearTimeout(saveTimer);clearTimeout(draftTimer);set({recovery:{...recovery,busy:true,error:null}});
+    const resolve=async()=>{
+      let previous=null;
+      try{
+        if(projectStorage.getItem(DRAFT_KEY)!==recovery.raw)throw Error('Черновик изменён после открытия. Закройте редактор и откройте его снова; копии не удалены.');
+        const library=loadLibrary(true),currentRaw=projectStorage.getItem(STORAGE_KEY);
+        if(currentRaw)normalizeProject(JSON.parse(currentRaw));
+        const chosen=normalizeProject(decision==='restore'?recovery.project:recovery.saved??get().project);
+        if(decision==='restore')chosen.meta.modifiedAt=new Date().toISOString();
+        // Preserve the previous active project even if it was absent from an old
+        // library. A draft belonging to another project never merges their scenes.
+        const others=library.filter(p=>p.id!==chosen.id),active=get().project;
+        if(active.id!==chosen.id&&!others.some(p=>p.id===active.id))others.push(active);
+        const projects=[chosen,...others];
+        previous=Object.fromEntries([STORAGE_KEY,LIBRARY_KEY,DRAFT_KEY].map(key=>[key,projectStorage.getItem(key)]));
+        projectStorage.setItem(STORAGE_KEY,JSON.stringify(chosen));
+        projectStorage.setItem(LIBRARY_KEY,JSON.stringify(projects));
+        projectStorage.removeItem(DRAFT_KEY);
+        await projectStorage.flush?.();
+        const selection=selectionFor(chosen);
+        if(decision==='restore'&&chosen.scenes[recovery.selection?.activeSceneId]){
+          Object.assign(selection,{activeSceneId:recovery.selection.activeSceneId,activeActionId:typeof recovery.selection.activeActionId==='string'?recovery.selection.activeActionId:null,activeLayerId:typeof recovery.selection.activeLayerId==='string'?recovery.selection.activeLayerId:null});
+          Object.assign(selection,selectionAfterHistory(selection,chosen));
+        }
+        set({project:chosen,projects,recovery:null,...selection,past:[],future:[],saveState:'saved',saveError:null});
+        return true;
+      }catch(error){
+        // Native/IndexedDB commits are atomic; restore the renderer staging cache
+        // too so a failed restore followed by discard cannot publish the draft.
+        if(previous)for(const [key,value]of Object.entries(previous)){try{if(value==null)projectStorage.removeItem(key);else projectStorage.setItem(key,value);}catch{/* Keep the original error and the in-memory recovery copy. */}}
+        set({recovery:{...recovery,busy:false,error:error.message},saveState:'error',saveError:error.message});return false;
+      }
+    };
+    saveQueue=saveQueue.catch(()=>{}).then(resolve);return saveQueue;
+  },
+  waitForPendingWrites: () => saveQueue,
+
   setActiveSection: (activeSection) => set({ activeSection }),
-  setActiveScene: (activeSceneId) => set((state) => ({ activeSceneId, activeActionId: null, activeLayerId: state.project.scenes[activeSceneId]?.characters?.[0]?.id ?? null, activeSection: "scenes" })),
+  setActiveScene: (activeSceneId) => set((state) => {const scene=state.project.scenes[activeSceneId],activeActionId=scene?.timelineEnabled?null:scene?.actions[0]?.id??null;return {activeSceneId,activeActionId,timelineTime:state.activeSceneId===activeSceneId?state.timelineTime:0,activeLayerId:activeActionId?null:scene?.characters?.[0]?.id??null,activeSection:'scenes'};}),
   setActiveAction: (activeActionId) => set({ activeActionId, activeLayerId: null, inspectorTab: "properties" }),
-  setActiveLayer: (activeLayerId) => set({ activeLayerId, activeActionId: null, inspectorTab: "properties" }),
+  setActiveLayer: (activeLayerId) => set({ activeLayerId, inspectorTab: "properties" }),
+  selectVisualLayer: (activeLayerId) => set({ activeLayerId, inspectorTab: "properties" }),
   setSelectedCharacter: (selectedCharacterId) => set({ selectedCharacterId }),
   setSelectedResource: (selectedResourceId) => set({ selectedResourceId }),
   setInspectorTab: (inspectorTab) => set({ inspectorTab }),
   setBottomTab: (bottomTab) => set({ bottomTab }),
-  setZoom: (zoom) => set({ zoom: Math.max(50, Math.min(150, zoom)) }),
+  setUiScreen: uiScreen => set({uiScreen}),
+  setUiElement: uiElement => set({uiElement}),
 
-  newProject: (configuration = "empty") => {
-    if (get().saveState !== "saved") get().saveNow();
+  newProject: async (configuration = "empty") => {
+    if(get().recovery)throw Error('Сначала выберите, восстанавливать ли черновик.');
+    if (get().saveState !== "saved" && !await get().saveNow()) throw new Error(get().saveError || "Не удалось сохранить текущий проект. Переход отменён.");
     const project = normalizeProject(createProject(configuration));
     set({ project, ...selectionFor(project), past: [], future: [], saveState: "saving" });
-    get().saveNow();
+    if (!await get().saveNow()) throw new Error(get().saveError || "Проект создан в памяти, но не сохранён. Экспортируйте его в файл.");
     return project;
   },
 
-  openProject: (projectId) => {
-    if (get().saveState !== "saved") get().saveNow();
+  openProject: async (projectId) => {
+    if(get().recovery)throw Error('Сначала выберите, восстанавливать ли черновик.');
+    if (get().saveState !== "saved" && !await get().saveNow()) throw new Error(get().saveError || "Не удалось сохранить текущий проект. Переход отменён.");
     const project = get().projects.find((item) => item.id === projectId);
     if (!project) return false;
     const normalized = normalizeProject(project);
@@ -237,32 +344,22 @@ export const useProjectStore = create((set, get) => ({
     if (action) { Object.assign(action, patch); if(action.timeline && patch.duration != null) action.timeline.duration=Math.max(.1,Number(patch.duration)||.1); }
   }),
 
-  addResource: (resource) => withHistory(set, (project) => {
-    project.resources.push({ id: createId("res"), importedAt: new Date().toISOString(), ...resource });
-  }),
+  addResource: (resource) => {
+    const id=resource.id??createId('res');
+    withHistory(set, project=>{project.resources.push({id,importedAt:new Date().toISOString(),...resource});});
+    return id;
+  },
 
   updateResource: (resourceId, patch) => withHistory(set, (project) => {
     const resource = project.resources.find((item) => item.id === resourceId);
     if (resource) Object.assign(resource, patch);
   }),
 
-  replaceResource: (resourceId, replacement) => withHistory(set, (project) => {
-    const resource = project.resources.find((item) => item.id === resourceId);
-    if (!resource) return;
-    const previousSource = resource.source;
-    Object.assign(resource, replacement, { id: resourceId, replacedAt: new Date().toISOString() });
-    for (const scene of Object.values(project.scenes)) {
-      if (scene.backgroundResourceId === resourceId || scene.background === previousSource) { scene.backgroundResourceId = resourceId; scene.background = resource.source; }
-    }
-    for (const character of project.characters) {
-      if (character.portraitResourceId === resourceId || character.portrait === previousSource) { character.portraitResourceId = resourceId; character.portrait = resource.source; }
-      for (const sprite of character.sprites) if (sprite.resourceId === resourceId || sprite.source === previousSource) { sprite.resourceId = resourceId; sprite.source = resource.source; }
-    }
-    if (project.ui.dialogueBackgroundResourceId === resourceId || project.ui.dialogueBackground === previousSource) project.ui.dialogueBackground = resource.source;
-    if (project.ui.mainMenuBackgroundResourceId === resourceId || project.ui.mainMenuBackground === previousSource) project.ui.mainMenuBackground = resource.source;
-  }),
+  repairMedia: request => {let repaired=0;withHistory(set,project=>{repaired=authorMediaRepairs(project,request);});return repaired;},
+  importMedia: request => {let result;const ids=request.resources.map(()=>createId('resource'));withHistory(set,project=>{result=authorMediaImports(project,request,ids);},()=>({selectedResourceId:result[0]??null}));return result;},
 
   removeResource: (resourceId) => withHistory(set, (project) => {
+    clearUiResource(project,resourceId);
     const resource = project.resources.find((item) => item.id === resourceId);
     project.resources = project.resources.filter((item) => item.id !== resourceId);
     for (const scene of Object.values(project.scenes)) {
@@ -270,8 +367,11 @@ export const useProjectStore = create((set, get) => ({
       for (const action of scene.actions) {
         if (action.assetId === resourceId) action.assetId = null;
         if (action.voiceAssetId === resourceId) action.voiceAssetId = null;
+        if (action.soundAssetId === resourceId) action.soundAssetId = null;
       }
+      for(const layer of scene.images??[])for(const reaction of layer.interactions??[])for(const key of ['voiceAssetId','soundAssetId','resultResourceId'])if(reaction[key]===resourceId)reaction[key]=null;
     }
+    for(const item of project.items??[])if(item.iconResourceId===resourceId)item.iconResourceId=null;
     for (const character of project.characters) {
       if (character.portraitResourceId === resourceId || character.portrait === resource?.source) { character.portraitResourceId = null; character.portrait = null; }
       for (const sprite of character.sprites) if (sprite.resourceId === resourceId || sprite.source === resource?.source) { sprite.resourceId = null; sprite.source = null; }
@@ -289,6 +389,13 @@ export const useProjectStore = create((set, get) => ({
     set({ selectedCharacterId: id, activeSection: "characters" });
   },
 
+  createCharacterOnScene: input => {
+    const ids=Object.fromEntries(['character','resource','sprite','layer','action'].map(kind=>[`${kind}Id`,createId(kind)]));
+    let created;
+    withHistory(set,project=>{created=authorCharacterForScene(project,input,ids);},()=>({selectedCharacterId:created.characterId,activeSceneId:input.sceneId,activeActionId:created.actionId,activeLayerId:created.layerId,inspectorTab:'properties',activeSection:'scenes',...(created.placement==='timeline'?{bottomTab:'timeline',timelineTime:Math.max(0,Number(input.time)||0)}:{})}));
+    return created;
+  },
+
   updateCharacter: (characterId, patch) => withHistory(set, (project) => {
     const character = project.characters.find((item) => item.id === characterId);
     if (character) Object.assign(character, patch);
@@ -298,7 +405,7 @@ export const useProjectStore = create((set, get) => ({
     const state = get();
     if (state.project.characters.length < 1) return false;
     const used = Object.values(state.project.scenes).some((scene) => scene.characters?.some((layer) => layer.characterId === characterId) || scene.actions?.some((action) => action.speakerId === characterId || action.characterId === characterId));
-    if (used) return false;
+    if (used || Object.values(state.project.scenes).some(scene=>(scene.images??[]).some(layer=>layer.interactions?.some(r=>r.speakerId===characterId)))) return false;
     withHistory(set, (project) => { project.characters = project.characters.filter((item) => item.id !== characterId); });
     set({ selectedCharacterId: get().project.characters.find((item) => item.id !== characterId)?.id ?? null });
     return true;
@@ -342,8 +449,55 @@ export const useProjectStore = create((set, get) => ({
     if (layer) Object.assign(layer, patch);
   }),
 
+  addPropReaction: (sceneId,layerId) => {
+    const id=createId('reaction');withHistory(set,project=>addPropReaction(project,sceneId,layerId,id));return id;
+  },
+  createPropReaction: input => {
+    let result;
+    const ids={reactionId:createId('reaction'),itemId:createId('item'),soundResourceId:createId('resource'),voiceResourceId:createId('resource'),actionId:createId('act')};
+    withHistory(set,project=>{result=authorPropReaction(project,input,ids);},state=>({activeSceneId:input.sceneId,activeLayerId:input.layerId,activeActionId:result.actionId??get().activeActionId,inspectorTab:'properties',activeSection:'scenes'}));
+    return result;
+  },
+  updatePropReaction: (sceneId,layerId,reactionId,patch) => withHistory(set,project=>changePropReaction(project,sceneId,layerId,reactionId,patch,createId('item'))),
+  removePropReaction: (sceneId,layerId,reactionId) => withHistory(set,project=>{const layer=project.scenes[sceneId]?.images?.find(l=>l.id===layerId);if(layer)layer.interactions=(layer.interactions??[]).filter(r=>r.id!==reactionId);}),
+  updateItem: (itemId,patch) => withHistory(set,project=>{const item=project.items?.find(i=>i.id===itemId);if(item)Object.assign(item,patch);}),
+  addItem: () => {const id=createId('item');withHistory(set,project=>{project.items??=[];project.items.push({id,name:'Новый предмет',description:'',iconResourceId:null});},()=>({selectedInventoryId:id}));return id;},
+  removeItem: itemId => {if(logicReferences(get().project,'item',itemId).length)return false;withHistory(set,project=>{project.items=(project.items??[]).filter(i=>i.id!==itemId);},project=>({selectedInventoryId:project.items[0]?.id??null}));return true;},
+  attachAudio: request => {let id;withHistory(set,project=>{id=authorAudioAttachment(project,request,createId('resource'));});return id;},
+  editUi: request => withHistory(set,project=>authorUi(project,request,createId('resource'))),
+  attachFont: request => {let id;withHistory(set,project=>{id=authorFont(project,request,createId('font'));});return id;},
+
+  createSceneProp: input => {
+    let result;
+    const ids={layerId:createId('image'),resourceId:createId('resource'),soundResourceId:createId('resource'),voiceResourceId:createId('resource'),reactionId:createId('reaction'),itemId:createId('item'),actionId:createId('act')};
+    withHistory(set,project=>{result=authorProp(project,input,ids);},()=>({activeSceneId:input.sceneId,activeLayerId:result.layerId,activeActionId:result.actionId,selectedResourceId:result.resourceId,inspectorTab:'properties',activeSection:'scenes'}));
+    return result;
+  },
+  addSceneImage: (sceneId,resourceId) => {
+    const id=createId('image');
+    withHistory(set,project=>{const scene=project.scenes[sceneId],resource=project.resources.find(r=>r.id===resourceId);if(!scene||!resource)return;scene.images??=[];scene.images.push({id,resourceId,name:resource.name,x:50,y:100,width:60,height:45,scale:100,rotation:0,opacity:100,visible:true,locked:false,zOrder:50+scene.images.length});});
+    set({activeLayerId:id,inspectorTab:'properties'});return id;
+  },
+  updateSceneImage: (sceneId,layerId,patch)=>withHistory(set,project=>{const layer=project.scenes[sceneId]?.images?.find(item=>item.id===layerId);if(layer)Object.assign(layer,patch);}),
+  removeSceneImage: (sceneId,layerId)=>{withHistory(set,project=>{const scene=project.scenes[sceneId];if(scene)scene.images=(scene.images??[]).filter(item=>item.id!==layerId);});set({activeLayerId:null});},
+
+  layerToTimeline: (sceneId, layerId) => {
+    const state=get(),scene=state.project.scenes[sceneId],layer=scene?.characters.find(l=>l.id===layerId);
+    if (!layer || layer.locked) return false;
+    const id=createId('act');
+    const start=Math.max(state.timelineTime,0,...timelineClips(scene).filter(c=>c.enabled&&c.action.type==='showCharacter'&&c.action.characterId===layer.characterId).map(c=>c.end));
+    withHistory(set,project=>{
+      const target=project.scenes[sceneId];materializeTimeline(target);
+      const {id:oldId,name,visible,locked,...transform}=layer;
+      target.actions.push({...transform,id,type:'showCharacter',transition:'none',timeline:{start,duration:5,enabled:visible!==false}});
+      target.characters=target.characters.filter(l=>l.id!==layerId);
+    });
+    set({activeActionId:id,activeLayerId:null,bottomTab:'timeline',timelineTime:start});
+    return true;
+  },
+
   removeSceneCharacter: (sceneId, layerId) => withHistory(set, (project) => {
-    project.scenes[sceneId].characters = (project.scenes[sceneId].characters ?? []).filter((item) => item.id !== layerId);
+    project.scenes[sceneId].characters = (project.scenes[sceneId].characters ?? []).filter((item) => item.id !== layerId || item.locked);
   }),
 
   moveSceneCharacter: (sceneId, layerId, direction) => withHistory(set, (project) => {
@@ -363,8 +517,7 @@ export const useProjectStore = create((set, get) => ({
   }),
 
   removeVariable: (variableId) => {
-    const used = Object.values(get().project.scenes).some((scene) => scene.actions?.some((action) => action.variableId === variableId || action.options?.some((option) => option.condition?.variableId === variableId || option.effects?.some((effect) => effect.variableId === variableId))));
-    if (used) return false;
+    if(logicReferences(get().project,'variable',variableId).length)return false;
     withHistory(set, (project) => { project.variables = project.variables.filter((item) => item.id !== variableId); });
     return true;
   },
@@ -379,8 +532,7 @@ export const useProjectStore = create((set, get) => ({
   }),
 
   removeFlag: (flagId) => {
-    const used = Object.values(get().project.scenes).some((scene) => scene.actions?.some((action) => action.flagId === flagId || action.options?.some((option) => option.effects?.some((effect) => effect.flagId === flagId))));
-    if (used) return false;
+    if(logicReferences(get().project,'flag',flagId).length)return false;
     withHistory(set, (project) => { project.flags = project.flags.filter((item) => item.id !== flagId); });
     return true;
   },
@@ -462,6 +614,11 @@ export const useProjectStore = create((set, get) => ({
   },
 
   connectScenes: (from, to) => withHistory(set, (project) => connectScenes(project, from, to)),
+  createChoiceBranch: request => {
+    const id=createId('scene');
+    withHistory(set,project=>authorChoiceBranch(project,request,id));
+    return id;
+  },
   updateExit: (edge, patch) => withHistory(set, (project) => updateExit(project, edge, patch)),
   removeExit: (edge) => withHistory(set, (project) => removeExit(project, edge)),
   moveSceneToChapter: (sceneId, chapterId) => withHistory(set, (project) => {
@@ -486,7 +643,7 @@ export const useProjectStore = create((set, get) => ({
     const project = get().project;
     if (Object.keys(project.scenes).length < 2) return false;
     const referenced = Object.values(project.scenes).some((scene) => scene.actions?.some((action) => action.targetSceneId === sceneId || action.trueSceneId === sceneId || action.falseSceneId === sceneId || action.options?.some((option) => option.targetSceneId === sceneId)));
-    if (referenced) return false;
+    if (referenced || Object.values(project.scenes).some(scene=>(scene.images??[]).some(layer=>layer.interactions?.some(r=>r.targetSceneId===sceneId)))) return false;
     withHistory(set, (next) => {
       delete next.scenes[sceneId];
       for (const chapter of next.chapters) chapter.scenes = chapter.scenes.filter((id) => id !== sceneId);
@@ -504,7 +661,12 @@ export const useProjectStore = create((set, get) => ({
     if (target >= 0 && target < chapter.scenes.length) [chapter.scenes[index], chapter.scenes[target]] = [chapter.scenes[target], chapter.scenes[index]];
   }),
 
-  addAction: (type) => {
+  convertSceneToStoryboard: (sceneId) => withHistory(set, project=>{
+    const scene=project.scenes[sceneId];if(!scene?.timelineEnabled)return;
+    scene.savedTimeline={actions:cloneDraft(scene.actions),convertedAt:new Date().toISOString()};
+    scene.actions=sequentialActions(cloneDraft(scene));scene.timelineEnabled=false;
+  }),
+  addAction: (type, {afterId, values} = {}) => {
     const sceneId = get().activeSceneId;
     const id = createId("act");
     withHistory(set, (project) => {
@@ -515,7 +677,8 @@ export const useProjectStore = create((set, get) => ({
       const bases = {
         dialogue: { id, type: "dialogue", speakerId: firstCharacter?.id ?? null, spriteId: null, voiceAssetId: null, text: "Новая реплика" },
         narration: { id, type: "narration", text: "Текст автора" },
-        choice: { id, type: "choice", prompt: "Что сделать?", options: [{ id: createId("choice"), text: "Новый вариант", targetSceneId: sceneId, effects: [] }] },
+        choice: { id, type: "choice", prompt: "Что сделать?", options: [1,2].map(n=>({id:createId('choice'),text:`Вариант ${n}`,targetSceneId:null,effects:[]})) },
+        explore: {id,type:'explore',prompt:'Осмотрите сцену',requiredItemId:null,requiredFlagId:null},
         background: { id, type: "background", title: "Изменить фон", assetId: null, assetName: "Выберите изображение", transition: "dissolve" },
         showCharacter: { id, type: "showCharacter", characterId: firstCharacter?.id ?? null, spriteId: null, position: firstCharacter?.defaultPosition ?? "center", transition: "dissolve" },
         hideCharacter: { id, type: "hideCharacter", characterId: firstCharacter?.id ?? null, transition: "dissolve" },
@@ -524,6 +687,7 @@ export const useProjectStore = create((set, get) => ({
         characterAnimation: { id, type: "characterAnimation", characterId: firstCharacter?.id ?? null, animation: "shake", duration: 0.5, intensity: 1 },
         music: { id, type: "music", assetId: null, volume: 0.8, fadeIn: 1, loop: true },
         stopMusic: { id, type: "stopMusic", fadeOut: 1 },
+        stopAudio: {id,type:'stopAudio',channel:'sound',fadeOut:0},
         sound: { id, type: "sound", assetId: null, volume: 1 },
         ambience: {id,type:"ambience",assetId:null,volume:1,loop:true},
         voice: { id, type: "voice", assetId: null },
@@ -539,9 +703,13 @@ export const useProjectStore = create((set, get) => ({
         hideCG: { id, type: "hideCG", transition: "dissolve" },
       };
       const base = bases[type] ?? bases.dialogue;
-      project.scenes[sceneId].actions.push(base);
+      if(values)Object.assign(base,values,{id,type});
+      const scene=project.scenes[sceneId];
+      const index=scene.actions.findIndex(a=>a.id===afterId);
+      if(index>=0&&!scene.timelineEnabled)scene.actions.splice(index+1,0,base);else scene.actions.push(base);
     });
-    set({ activeActionId: id, activeLayerId: null, inspectorTab: "properties", bottomTab: "scenario" });
+    set({ activeActionId: id, activeLayerId: null, inspectorTab: "properties" });
+    return id;
   },
 
   removeAction: (sceneId, actionId) => withHistory(set, (project) => {
@@ -562,23 +730,28 @@ export const useProjectStore = create((set, get) => ({
     if (index >= 0 && target >= 0 && target < actions.length) [actions[index], actions[target]] = [actions[target], actions[index]];
   }),
 
-  pasteAction: (sceneId, source) => {
+  pasteAction: (sceneId, source, {afterId} = {}) => {
     const action = structuredClone(source);
     action.id = createId("act");
     if (action.type === "choice") action.options = (action.options ?? []).map((option) => ({ ...option, id: createId("choice"), effects: (option.effects ?? []).map((effect) => ({ ...effect, id: createId("effect") })) }));
-    withHistory(set, (project) => project.scenes[sceneId].actions.push(action));
-    set({ activeActionId: action.id, activeLayerId: null, bottomTab: "timeline" });
+    withHistory(set, (project) => {const scene=project.scenes[sceneId],index=scene.actions.findIndex(a=>a.id===(afterId??get().activeActionId));if(index>=0&&!scene.timelineEnabled)scene.actions.splice(index+1,0,action);else scene.actions.push(action);});
+    set({ activeActionId: action.id, activeLayerId: null });
   },
 
   setSceneBackground: (sceneId, dataUrl, assetName) => withHistory(set, (project) => {
     project.scenes[sceneId].background = dataUrl;
-    const bgAction = project.scenes[sceneId].actions.find((item) => item.type === "background");
-    if (bgAction) bgAction.assetName = assetName;
+    project.scenes[sceneId].backgroundResourceId=null;
   }),
+  applyBackground: input => {
+    let result;const ids={resourceId:createId('resource'),actionId:createId('act')};
+    withHistory(set,project=>{result=authorBackground(project,input,ids);},()=>({activeSceneId:input.sceneId,activeActionId:result.actionId,activeLayerId:'__background',inspectorTab:'properties',activeSection:'scenes',...(input.timed?{bottomTab:'timeline',timelineTime:input.time}:{})}));
+    return result;
+  },
 
-  importProject: (source) => {
+  importProject: async (source) => {
+    if(get().recovery)throw Error('Сначала выберите, восстанавливать ли черновик.');
     const project = normalizeProject(source);
-    if (get().saveState !== "saved") get().saveNow();
+    if (get().saveState !== "saved" && !await get().saveNow()) throw new Error(get().saveError || "Не удалось сохранить текущий проект. Переход отменён.");
     set({
       project,
       ...selectionFor(project),
@@ -586,63 +759,90 @@ export const useProjectStore = create((set, get) => ({
       future: [],
       saveState: "saved",
     });
-    get().saveNow();
+    if (!await get().saveNow()) throw new Error(get().saveError || "Не удалось сохранить импортированный проект.");
+    return true;
   },
 
   undo: () => set((state) => {
+    if(state.recovery)return state;
     if (!state.past.length) return state;
+    const entry=state.past.at(-1),project=replayProject(state.project,entry,'undo');
     return {
-      project: state.past[state.past.length - 1],
-      ...(!state.past[state.past.length - 1].scenes[state.activeSceneId] ? selectionFor(state.past[state.past.length - 1]) : {}),
+      project,
+      ...entry.beforeSelection,
+      ...selectionAfterHistory({...state,...entry.beforeSelection},project),
       past: state.past.slice(0, -1),
-      future: [state.project, ...state.future],
+      future: [entry, ...state.future],
       saveState: "saving",
     };
   }),
 
   redo: () => set((state) => {
+    if(state.recovery)return state;
     if (!state.future.length) return state;
+    const entry=state.future[0],project=replayProject(state.project,entry,'redo');
     return {
-      project: state.future[0],
-      ...(!state.future[0].scenes[state.activeSceneId] ? selectionFor(state.future[0]) : {}),
-      past: [...state.past, state.project],
+      project,
+      ...entry.afterSelection,
+      ...selectionAfterHistory({...state,...entry.afterSelection},project),
+      past: [...state.past, entry],
       future: state.future.slice(1),
       saveState: "saving",
     };
   }),
 
   saveNow: () => {
+    if(get().recovery)return Promise.resolve(false);
+    clearTimeout(saveTimer);
+    clearTimeout(draftTimer);
+    const save=async()=>{
     try {
-      const projects = persistProject(get().project);
+      let snapshot,projects;
+      do {
+        snapshot=get().project;
+        projects=await persistProject(snapshot);
+      } while(get().project!==snapshot);
       projectStorage.removeItem(DRAFT_KEY);
-      set({ saveState: "saved", projects, saveError: null });
+      await projectStorage.flush?.();
+      set({ saveState: get().project === snapshot ? "saved" : "saving", projects, saveError: null });
+      if(get().project!==snapshot)return save();
       return true;
     } catch (error) {
       set({ saveState: "error", saveError: error.message });
       return false;
     }
+    };
+    saveQueue=saveQueue.catch(()=>{}).then(save);
+    return saveQueue;
   },
 }));
 
-let saveTimer;
+let saveTimer,draftTimer;
 useProjectStore.subscribe((state, previous) => {
   if (state.project === previous.project) return;
   clearTimeout(saveTimer);
-  try { projectStorage.setItem(DRAFT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), project: state.project })); }
-  catch { useProjectStore.setState({ saveState: "error" }); return; }
+  clearTimeout(draftTimer);
+  if(state.recovery||state.saveState==='saved')return;
+  // Coalesce a typing burst, then durably checkpoint the latest document. Queue
+  // with explicit saves so an old checkpoint cannot resurrect a removed draft.
+  draftTimer=setTimeout(()=>{
+    const checkpoint=async()=>{
+      const current=useProjectStore.getState();
+      if(current.saveState==='saved')return;
+      try {
+        if(current.recovery)return;
+        projectStorage.setItem(DRAFT_KEY,JSON.stringify({savedAt:new Date().toISOString(),project:current.project,selection:{activeSceneId:current.activeSceneId,activeActionId:current.activeActionId,activeLayerId:current.activeLayerId}}));
+        await projectStorage.flush?.();
+      } catch(error) {useProjectStore.setState({saveState:'error',saveError:error.message});}
+    };
+    saveQueue=saveQueue.catch(()=>{}).then(checkpoint);
+  },250);
   const seconds = Number(state.project.editor?.autosaveSeconds) || 3;
-  saveTimer = setTimeout(() => {
-    try {
-      const projects = persistProject(useProjectStore.getState().project);
-      projectStorage.removeItem(DRAFT_KEY);
-      useProjectStore.setState({ saveState: "saved", projects });
-    } catch {
-      useProjectStore.setState({ saveState: "error" });
-    }
-  }, Math.max(500, seconds * 1000));
+  saveTimer = setTimeout(() => { void useProjectStore.getState().saveNow(); }, Math.max(500, seconds * 1000));
 });
 
-globalThis.window?.addEventListener("beforeunload", () => {
+globalThis.window?.addEventListener("beforeunload", (event) => {
   const state = useProjectStore.getState();
-  if (state.saveState !== "saved") state.saveNow();
+  if(state.recovery)return;
+  if (state.saveState !== "saved") { void state.saveNow(); event.preventDefault(); event.returnValue = ""; }
 });

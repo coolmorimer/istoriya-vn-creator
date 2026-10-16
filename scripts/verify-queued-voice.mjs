@@ -1,0 +1,10 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {spawn} from 'node:child_process';
+import {compileProject} from '../runtime/compiler.mjs';
+const base=path.join(process.env.LOCALAPPDATA,'IstoriyaQA');await fs.mkdir(base,{recursive:true});const root=await fs.mkdtemp(path.join(base,'queued-voice-'));
+const p=JSON.parse(await fs.readFile('.artifacts/native-0212-ui/props.vnproject','utf8'));
+p.scenes.queued={id:'queued',title:'Остановка ожидающей озвучки',characters:[],images:[],actions:[{id:'voice',type:'voice',assetId:'voice'},{id:'stop',type:'stopAudio',channel:'voice',fadeOut:0},{id:'line',type:'narration',text:'queued-silent'},{id:'end',type:'end'}]};p.chapters[0].scenes.push('queued');
+await compileProject(p,path.join(root,'project'),{sdkPath:path.resolve('../renpy-8.5.3-sdk'),assetsRoot:path.resolve('public')});
+const fixture=path.join(root,'testcases.rpy');await fs.writeFile(fixture,(await fs.readFile('tests/fixtures/character-animation-checks.rpy','utf8'))+`\ntestcase cancel_pending_voice_before_reply:\n    run Start("scene_queued")\n    advance until eval (_last_say_what or "") == "queued-silent"\n    pause 0.2\n    assert eval renpy.music.get_playing(channel="voice") is None\n`);
+console.log(`Queued voice QA: ${root}`);const child=spawn(process.execPath,['scripts/test-tea-runtime.mjs','--isolated-desktop','--source',path.join(root,'project'),'--fixture',fixture,'--qa-root',root],{stdio:'inherit',windowsHide:true});process.exitCode=await new Promise((resolve,reject)=>{child.on('error',reject);child.on('close',resolve);});

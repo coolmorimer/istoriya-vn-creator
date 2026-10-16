@@ -35,7 +35,7 @@ export function TimelineEditor({scene,actionLabel,content}) {
   const commit=(patch)=>{if(selected&&!selected.locked)editClip(scene.id,selected.action.id,patch);};
   const duplicate=()=>{if(!selected)return;pasteAction(scene.id,selected.action);const id=useProjectStore.getState().activeActionId;editClip(scene.id,id,{start:selected.end});};
   const zoom=next=>{const el=viewport.current;if(!el)return;next=Math.max(15,Math.min(240,next));const center=(el.scrollLeft+el.clientWidth/2-174)/pixels;setPixels(next);requestAnimationFrame(()=>{el.scrollLeft=Math.max(0,center*next+174-el.clientWidth/2);});};
-  useEffect(()=>{setPlaying(false);setTimelineTime(0);setDraft(null);},[scene.id]);
+  useEffect(()=>{setPlaying(false);setDraft(null);},[scene.id]);
   useEffect(()=>{if(!playing)return;let frame;let last=performance.now();const tick=now=>{const state=useProjectStore.getState();const t=Math.min(duration,state.timelineTime+(now-last)/1000);last=now;setTimelineTime(t);if(t>=duration){setPlaying(false);return;}frame=requestAnimationFrame(tick);};frame=requestAnimationFrame(tick);return()=>cancelAnimationFrame(frame);},[playing,duration]);
   useEffect(()=>{
     const active=clips.filter(c=>c.enabled&&category(c.track)==='audio'&&c.action.type!=='stopMusic'&&c.start<=timelineTime&&timelineTime<c.end);
@@ -80,6 +80,6 @@ export function TimelineEditor({scene,actionLabel,content}) {
     </div>
     <div className="tl-footer">{selected?<><strong>{actionLabel(selected.action)}</strong><label>Начало<input aria-label="Начало выбранного клипа" disabled={selected.locked} type="number" min="0" step=".1" value={draft?.id===selected.action.id?draft.start:selected.start} onChange={e=>commit({start:Number(e.target.value)||0})}/><span>с</span></label><label>Длительность<input aria-label="Длительность выбранного клипа" disabled={selected.locked} type="number" min=".1" step=".1" value={draft?.id===selected.action.id?draft.duration:selected.duration} onChange={e=>commit({duration:Number(e.target.value)||.1})}/><span>с</span></label>{['dialogue','narration'].includes(selected.action.type)&&<label><input type="checkbox" checked={selected.action.timeline?.waitForClick!==false} onChange={e=>commit({waitForClick:e.target.checked})}/>Ждать клик в конце</label>}</>:<span>ПКМ — добавить · тянуть клип — переместить · края — длительность · Пробел — просмотр</span>}<span className="tl-footer-end">30 кадров/с · {clips.length} клипов</span></div>
     {menu&&<EditorContextMenu position={menu} items={menu.clip?clipMenu:commonMenu} onClose={()=>setMenu(null)}/>}
-    {characters&&<CharacterPicker sceneId={scene.id} onClose={()=>setCharacters(false)} onAdded={id=>add('showCharacter',{characterId:id,spriteId:null})}/>}
+    {characters&&<CharacterPicker sceneId={scene.id} placement="timeline" time={insertTime.current} onClose={()=>setCharacters(false)} onAdded={id=>add('showCharacter',{characterId:id,spriteId:null})}/>}
   </section>;
 }

@@ -1,0 +1,12 @@
+import fs from 'node:fs/promises';
+import {createProject} from '../src/domain/projectFactory.js';
+const p=createProject({title:'Native integration check'});
+const scene=Object.values(p.scenes)[0];
+const ui=process.argv.includes('--ui');
+const source=ui?'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jw1sAAAAASUVORK5CYII=':`data:image/png;base64,${(await fs.readFile('public/assets/demo-aurora.png')).toString('base64')}`;
+p.resources=[{id:'bg',name:'Проверочный фон',category:'background',source}];
+p.characters=[{id:'actor',name:'Проверочный персонаж',color:'#ffffff',sprites:[{id:'neutral',name:'Основной',source}],defaultSpriteId:'neutral'}];
+scene.actions=[{id:'bg-action',type:'background',assetId:'bg',transition:'none'},{id:'show',type:'showCharacter',characterId:'actor',spriteId:'neutral',scale:75,x:25},{id:'move',type:'moveCharacter',characterId:'actor',x:63,y:94,duration:1},{id:'text',type:'narration',text:'Rust сохранил проект, открыл его и запустил сборку Ren’Py.'},{id:'end',type:'end'}];
+await fs.mkdir('.artifacts/native-verification',{recursive:true});
+await fs.writeFile(`.artifacts/native-verification/fixture${ui?'-ui':''}.json`,JSON.stringify(p));
+console.log('Native integration fixture prepared.');

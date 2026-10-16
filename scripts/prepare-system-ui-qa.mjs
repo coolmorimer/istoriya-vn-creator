@@ -1,0 +1,14 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {createProject} from '../src/domain/projectFactory.js';
+import {solidPng} from './qa-png.mjs';
+import {compileProject} from '../runtime/compiler.mjs';
+import {validateProject} from '../src/domain/validator.js';
+const p=createProject({title:'Игровые экраны — QA',resolution:{width:1280,height:720}});p.id='system_ui_qa';p.ui.textStyle={speed:0};
+p.resources=[{id:'picture',name:'QA картинка',category:'cg',mime:'image/png',source:`data:image/png;base64,${solidPng(64,64,[60,140,220,255]).toString('base64')}`}];
+p.scenes={first:{id:'first',title:'Проверка экранов',characters:[],images:[],actions:[{id:'one',type:'narration',text:'system-first'},{id:'two',type:'narration',text:'system-second'},{id:'cg',type:'showCG',assetId:'picture',transition:'none',unlockGallery:true},{id:'three',type:'narration',text:'system-unlocked'},{id:'end',type:'end'}]}};p.chapters[0].scenes=['first'];
+p.gallery={sections:[{id:'g',title:'Глава [1] {пример}',items:[{id:'open',title:'Открытое',resourceId:'picture',unlockMode:'always'},{id:'closed',title:'Закрытое',resourceId:'picture',unlockMode:'seen'}]}]};
+p.ui.layout.save.content.columns=2;p.ui.layout.load.content.columns=2;p.ui.layout.save.title.label='Мои сохранения';p.ui.layout.preferences.options.skipAll=false;p.ui.layout.preferences.options.resolution=false;p.ui.layout.notify.duration=.5;
+const check=validateProject(p);if(!check.valid)throw Error(JSON.stringify(check.issues));
+const root=await fs.mkdtemp(path.join(process.env.LOCALAPPDATA,'IstoriyaQA/system-ui-'));await fs.writeFile(path.join(root,'fixture.vnproject'),JSON.stringify(p));await compileProject(p,path.join(root,'project'),{sdkPath:path.resolve('../renpy-8.5.3-sdk'),assetsRoot:path.resolve('public')});
+await fs.writeFile('.artifacts/system-ui-qa-location.json',JSON.stringify({root,project:path.join(root,'fixture.vnproject')},null,2));console.log(root);

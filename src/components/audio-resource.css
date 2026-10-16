@@ -1,0 +1,12 @@
+.audio-resource-field {margin:14px 0;}
+.audio-resource-field .field {margin-bottom:7px;}
+.audio-resource-actions {display:flex;flex-wrap:wrap;gap:6px;}
+.audio-resource-actions button {display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:5px 9px;border:1px solid #494353;border-radius:5px;background:#22212b;color:#e5ddec;cursor:pointer;}
+.audio-resource-actions button:hover {background:#332b40;}
+.audio-resource-actions button:disabled {opacity:.45;cursor:default;}
+.audio-resource-actions button:focus-visible {outline:2px solid #b57aff;outline-offset:2px;}
+.audio-resource-field small {display:block;margin-top:6px;color:#b8b2c2;}
+.audio-resource-field [role=alert] {font-size:14px;line-height:1.5;color:#ffbcc2;}
+.audio-resource-field .audio-recording-status {font-size:14px;line-height:1.5;color:#e8d5ff;margin:8px 0;}
+.action-audio-options {margin-top:16px;padding-top:12px;border-top:1px solid #3b3645;}
+.action-audio-options summary {cursor:pointer;color:#d9c2ef;}

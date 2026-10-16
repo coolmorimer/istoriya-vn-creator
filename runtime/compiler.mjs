@@ -1,7 +1,20 @@
 import { resolveCharacterSprite } from "./character-sprites.mjs";
+import {renpyBackground} from './background-transform.mjs';
+import {sceneImages} from './image-layers.mjs';
+import {sceneCharacterLayers,layerZOrder} from './visual-order.mjs';
+import {interactionScript,explorationLines} from './interaction-script.mjs';
+import {compileCondition,compileGameplayEffect,scalarValue} from './game-logic.mjs';
+import {gameUi,uiResourceIds,uiLayoutProblems} from './game-ui.mjs';
+import {gameUiScript} from './game-ui-script.mjs';
+import {AUDIO_CHANNELS,audioVolume,audioFade,voiceFilename} from './audio-model.mjs';
+import {renpyActorTransform,renpyFloat} from './renpy-transform.mjs';
+import {generateGameGui} from './gui-template.mjs';
+import {animationSettings,animationEnd,renpyAnimationLines} from './character-animation.mjs';
+import { textAppearance } from './text-style.mjs';
 import fs from "node:fs/promises";
 import { timelineEvents } from "./timeline-model.mjs";
-import { resolveStoryProject } from "./story-routing.mjs";
+import { resolveStoryProject, storyActions } from "./story-routing.mjs";
+import { assertProjectShape } from "./project-format.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -61,14 +74,8 @@ async function materializeAsset(source, destinationBase, assetsRoot) {
   return destination;
 }
 
-function compileEffect(effect, variables) {
-  const variable = variables.find((item) => item.id === effect.variableId);
-  if (!variable) return [];
-  const name = asciiId(variable.id, "v");
-  if (effect.operation === "add") return [`            $ ${name} += ${Number(effect.value) || 0}`];
-  if (effect.operation === "subtract") return [`            $ ${name} -= ${Number(effect.value) || 0}`];
-  const value = variable.type === "number" || variable.type === "relationship" ? Number(effect.value) || 0 : variable.type === "boolean" ? (effect.value === true || effect.value === "true") : effect.value;
-  return [`            $ ${name} = ${renpyLiteral(value)}`];
+function compileEffect(effect, project) {
+  return compileGameplayEffect(effect,project,{asciiId,literal:renpyLiteral}).map(line=>`            $ ${line}`);
 }
 
 function transitionName(value) {
@@ -79,20 +86,12 @@ function transitionName(value) {
   return "dissolve";
 }
 
-function comparisonOperator(value) {
-  return { eq: "==", neq: "!=", gt: ">", gte: ">=", lt: "<", lte: "<=" }[value] ?? "==";
-}
-
 function conditionExpression(condition, project) {
-  if (!condition?.variableId) return "";
-  const variable = (project.variables ?? []).find((item) => item.id === condition.variableId);
-  if (!variable) return "";
-  const value = variable.type === "number" || variable.type === "relationship" ? Number(condition.value) || 0 : variable.type === "boolean" ? String(condition.value) === "true" || condition.value === true : condition.value;
-  return ` if ${asciiId(variable.id, "v")} ${comparisonOperator(condition.operator)} ${renpyLiteral(value)}`;
+  return condition==null?'':` if ${compileCondition(condition,project,{asciiId,literal:renpyLiteral})}`;
 }
 
 function sayAppearance(project, action, assetMap) {
-  const style={font:'DejaVuSans.ttf',size:action.type==='narration'?project.ui?.narratorFontSize??30:project.ui?.dialogueFontSize??32,color:project.ui?.dialogueTextColor??'#ffffff',speed:project.ui?.textSpeed??35,outline:0,outlineColor:'#000000',...project.ui?.textStyle,...action.textStyle};
+  const style=textAppearance(project,action);
   const font=assetMap.get(style.font)??(['DejaVuSans.ttf','DejaVuSans-Bold.ttf'].includes(style.font)?style.font:'DejaVuSans.ttf');
   const outlines=[];
   if(style.outline)outlines.push(`(${Math.max(0,Number(style.outline)||0)}, ${quote(style.outlineColor)}, 0, 0)`);
@@ -100,26 +99,29 @@ function sayAppearance(project, action, assetMap) {
   return ` (what_font=${quote(font)}, what_size=${Math.max(10,Number(style.size)||32)}, what_color=${quote(style.color)}, what_bold=${style.bold?'True':'False'}, what_italic=${style.italic?'True':'False'}, what_underline=${style.underline?'True':'False'}, what_outlines=[${outlines.join(', ')}], what_slow_cps=${Math.max(0,Number(style.speed)||0)})`;
 }
 function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new Map(), spriteMap = new Map()) {
-  const lines = [`label ${asciiId(scene.id, "scene")}:`];
+  const lines = [`label ${asciiId(scene.id, "scene")}:`, '    scene onlayer istoriya_cg_layer'];
   const background = backgroundMap.get(scene.id);
   const width = Number(project.meta.resolution.width) || 1920;
   const height = Number(project.meta.resolution.height) || 1080;
+  const propSceneId=scene.sourceSceneId??scene.id;
   const sizedSprite = (sprite) => `Transform(${quote(sprite)}, xysize=(${Math.round(width * .34)}, ${Math.round(height * .88)}), fit="contain")`;
+  const characters=sceneCharacterLayers(scene);
+  const visualLayers = new Map(characters.filter(layer=>layer.visible!==false).map(layer=>[layer.characterId,{...layer}]));
+  const renderImages=()=>{for(const layer of sceneImages(scene)){const asset=assetMap.get(layer.resourceId);if(!asset||layer.visible===false)continue;const interactive=layer.interactions?.length,source=interactive?`_istoriya_prop_source(${quote(propSceneId)}, ${quote(layer.id)}, ${quote(asset)})`:quote(asset);if(interactive)lines.push(`    if _istoriya_prop_visible(${quote(propSceneId)}, ${quote(layer.id)}):`);lines.push(`${interactive?'        ':'    '}show expression Transform(${source}, xysize=(${Math.round(width*layer.width/100)}, ${Math.round(height*layer.height/100)}), fit="contain") as ${asciiId(layer.id,'image')} at ${renpyActorTransform(layer)} zorder ${Math.round(layer.zOrder)}`);}};
   if (background) {
-    lines.push(`    scene expression Transform(${quote(background)}, xysize=(${width}, ${height}))`);
+    lines.push(`    scene expression ${renpyBackground(background,width,height,scene.backgroundTransform)} as istoriya_scene_bg zorder -100`);
     const transition = transitionName(scene.transition);
     if (transition) lines.push(`    with ${transition}`);
-  } else lines.push('    scene expression Solid("#000000")');
+  } else lines.push('    scene expression Solid("#000000") as istoriya_scene_bg zorder -100');
 
-  for (const [index, layer] of (scene.characters ?? []).entries()) {
+  for (const layer of characters) {
     if (layer.visible === false) continue;
     const sprite = spriteMap.get(`${layer.characterId}:${layer.spriteId ?? "default"}`) ?? spriteMap.get(`${layer.characterId}:default`);
     if (!sprite) continue;
-    const x = Number(layer.x ?? (layer.position === "left" ? 25 : layer.position === "right" ? 75 : 50)) / 100;
-    const y = Number(layer.y ?? 100) / 100;
-    lines.push(`    show expression ${sizedSprite(sprite)} as ${asciiId(layer.characterId, "actor")} at Transform(xpos=${x}, ypos=${y}, xanchor=0.5, yanchor=1.0, zoom=${Number(layer.scale ?? 100) / 100}, rotate=${Number(layer.rotation ?? 0)}, alpha=${Number(layer.opacity ?? 100) / 100}, xzoom=${layer.flip ? -1 : 1}) zorder ${index + 1}`);
+    lines.push(`    show expression ${sizedSprite(sprite)} as ${asciiId(layer.characterId, "actor")} at ${renpyActorTransform(layer)} zorder ${layer.zOrder}`);
   }
 
+  renderImages();
   if (!scene.actions?.length) {
     lines.push(nextSceneId ? `    jump ${asciiId(nextSceneId, "scene")}` : "    return", "");
     return lines.join("\n");
@@ -127,6 +129,17 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
 
   if (scene.timelineEnabled) lines.push('    $ _timeline_origin = renpy.get_game_runtime()', '    $ _timeline_hold = 0.0');
   for (const action of (scene.timelineEnabled ? timelineEvents(scene) : scene.actions)) {
+    const actionSound=assetMap.get(action.soundAssetId);
+    if(actionSound)lines.push(`    play sound ${quote(actionSound)} volume ${audioVolume(action.soundVolume)}`);
+    // Track the effective appearance so a move does not reset the current emotion or scale.
+    if (action.type === 'background' && !scene.timelineEnabled && action.preserveCharacters!==true) visualLayers.clear();
+    const visualId=action.characterId ?? action.speakerId;
+    if (action.type === 'hideCharacter') visualLayers.delete(visualId);
+    if (action.type === 'showCharacter') visualLayers.set(visualId,{...action,zOrder:layerZOrder(action.zOrder),x:action.x ?? ({left:25,center:50,right:75})[action.position] ?? 50,y:action.y ?? 100});
+    if (['changeSprite','dialogue'].includes(action.type) && (action.type==='changeSprite'||action.spriteId)) {
+      const layer=visualLayers.get(visualId);if(layer)layer.spriteId=action.spriteId ?? null;
+    }
+    if (action.type === 'moveCharacter') {const layer=visualLayers.get(visualId)??{};visualLayers.set(visualId,{...layer,x:action.x ?? ({left:25,center:50,right:75})[action.position] ?? 50,y:action.y ?? layer.y ?? 100});}
     if (action.type === 'timelineWait') { lines.push(`    $ renpy.pause(max(0.0, ${action.time} - (renpy.get_game_runtime() - _timeline_origin - _timeline_hold)), hard=True)`); continue; }
     if (action.type === 'timelineTextEnd') {
       if (action.wait) lines.push('    $ _timeline_before = renpy.get_game_runtime()', '    pause', '    $ _timeline_hold += renpy.get_game_runtime() - _timeline_before');
@@ -136,10 +149,13 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
     if (action.type === 'timelineBackgroundEnd') { lines.push('    hide istoriya_timeline_bg'); continue; }
     if (scene.timelineEnabled && action.type === 'pause') continue;
     if (action.type === 'pause') { lines.push(`    pause ${Math.max(.1,Number(action.duration)||1)}`); continue; }
+    if(action.type==='explore'){lines.push(...explorationLines(propSceneId,action,quote));continue;}
     if (action.type === "background") {
       const asset = assetMap.get(action.assetId);
       if (asset) {
-        lines.push(scene.timelineEnabled ? `    show expression Transform(${quote(asset)}, xysize=(${width}, ${height})) as istoriya_timeline_bg zorder -100` : `    scene expression Transform(${quote(asset)}, xysize=(${width}, ${height}))`);
+        const displayable=renpyBackground(asset,width,height,action.backgroundTransform);
+        lines.push(scene.timelineEnabled ? `    show expression ${displayable} as istoriya_timeline_bg zorder -100` : action.preserveCharacters===true?`    show expression ${displayable} as istoriya_scene_bg zorder -100`:`    scene expression ${displayable} as istoriya_scene_bg zorder -100`);
+        if(!scene.timelineEnabled&&action.preserveCharacters!==true){lines.push('    scene onlayer istoriya_cg_layer');renderImages();}
         const transition = transitionName(action.transition);
         if (transition) lines.push(`    with ${transition}`);
       }
@@ -151,11 +167,12 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
       const voice = assetMap.get(action.voiceAssetId);
       const sprite = spriteMap.get(`${action.speakerId}:${action.spriteId}`);
       if (sprite && character) lines.push(`    show expression ${sizedSprite(sprite)} as ${asciiId(character.id, "actor")}`);
-      if (voice) lines.push(`    voice ${quote(voice)}`);
+      if (voice) lines.push(`    voice ${quote(voiceFilename(voice,action.voiceVolume))}`);
       lines.push(scene.timelineEnabled ? `    $ ${speaker}(${quote(action.text)}, interact=False, ${sayAppearance(project,action,assetMap).trim().slice(1,-1)})` : `    ${speaker} ${quote(action.text)}${sayAppearance(project,action,assetMap)}`);
       continue;
     }
     if (action.type === "narration") {
+      const voice=assetMap.get(action.voiceAssetId);if(voice)lines.push(`    voice ${quote(voiceFilename(voice,action.voiceVolume))}`);
       lines.push(scene.timelineEnabled ? `    $ istoriya_narrator(${quote(action.text)}, interact=False, ${sayAppearance(project,action,assetMap).trim().slice(1,-1)})` : `    istoriya_narrator ${quote(action.text)}${sayAppearance(project,action,assetMap)}`);
       continue;
     }
@@ -163,12 +180,7 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
       lines.push("    menu:", `        ${quote(action.prompt || "Что сделать?")}`);
       for (const option of action.options ?? []) {
         lines.push(`        ${quote(option.text)}${conditionExpression(option.condition, project)}:`);
-        for (const effect of option.effects ?? []) {
-          if (effect.kind === "flag") {
-            const flag = (project.flags ?? []).find((item) => item.id === effect.flagId);
-            if (flag) lines.push(`            $ ${asciiId(flag.id, "flag")} = ${effect.value ? "True" : "False"}`);
-          } else lines.push(...compileEffect(effect, project.variables ?? []));
-        }
+        for (const effect of option.effects ?? []) lines.push(...compileEffect(effect, project));
         if (project.scenes[option.targetSceneId]) lines.push(`            jump ${asciiId(option.targetSceneId, "scene")}`);
         else lines.push("            return");
       }
@@ -181,8 +193,8 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
       if (character && sprite) {
         const tag = asciiId(character.id, "actor");
         const position = ["left", "right", "center"].includes(action.position) ? action.position : "center";
-        const transform = `Transform(xpos=${Number(action.x ?? ({left:25,center:50,right:75})[position])/100}, ypos=${Number(action.y ?? 100)/100}, xanchor=0.5, yanchor=1.0, zoom=${Number(action.scale ?? 100)/100})`;
-        lines.push(`    show expression ${sizedSprite(sprite)} as ${tag} at ${transform}`);
+        const transform = renpyActorTransform({...action,position});
+        lines.push(`    show expression ${sizedSprite(sprite)} as ${tag} at ${transform} zorder ${layerZOrder(action.zOrder)}`);
         const transition = transitionName(action.transition);
         if (transition) lines.push(`    with ${transition}`);
       }
@@ -199,7 +211,10 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
     }
     if (["changeSprite", "moveCharacter", "characterAnimation"].includes(action.type)) {
       const character = project.characters.find((item) => item.id === action.characterId);
-      const sprite = spriteMap.get(`${action.characterId}:${action.spriteId ?? "default"}`) ?? spriteMap.get(`${action.characterId}:default`);
+      const appearance=visualLayers.get(action.characterId)??{};
+      if(action.type==='characterAnimation'&&!visualLayers.has(action.characterId))continue;
+      const spriteId=action.type==='changeSprite'?action.spriteId:action.spriteId??appearance.spriteId;
+      const sprite = spriteMap.get(`${action.characterId}:${spriteId ?? "default"}`) ?? spriteMap.get(`${action.characterId}:default`);
       if (character && sprite) {
         const tag = asciiId(character.id, "actor");
         if (action.type === "changeSprite") {
@@ -207,16 +222,14 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
           const transition = transitionName(action.transition);
           if (transition) lines.push(`    with ${transition}`);
         } else if (action.type === "moveCharacter") {
-          const position = ["left", "right", "center"].includes(action.position) ? action.position : "center";
-          lines.push(`    show expression ${sizedSprite(sprite)} as ${tag} at ${position}`, `    with MoveTransition(${Math.max(0.1, Number(action.duration) || 0.5)})`);
+          const transform=renpyActorTransform(appearance);
+          lines.push(`    show expression ${sizedSprite(sprite)} as ${tag} at ${transform}`, `    with MoveTransition(${Math.max(0.1, Number(action.duration) || 0.5)})`);
         } else {
-          const duration = Math.max(0.1, Number(action.duration) || 0.5);
-          const intensity = Math.max(0.2, Math.min(3, Number(action.intensity) || 1));
-          if (action.animation === "shake") lines.push("    with hpunch");
-          else if (action.animation === "strongShake") lines.push("    with vpunch", "    with hpunch");
-          else {
-            const transform = { jump: "istoriya_jump", bounce: "istoriya_bounce", pulse: "istoriya_pulse", zoomIn: "istoriya_zoom", stepForward: "istoriya_step_forward", stepBack: "istoriya_step_back" }[action.animation] ?? "istoriya_jump";
-            lines.push(`    show expression ${sizedSprite(sprite)} as ${tag} at ${transform}(${duration}, ${intensity})`);
+          const {duration}=animationSettings(action),end=animationEnd(appearance,action);
+          lines.push(`    show expression ${sizedSprite(sprite)} as ${tag} zorder ${appearance.zOrder??10}:`,...renpyAnimationLines(appearance,action));
+          visualLayers.set(action.characterId,end);
+          if(!scene.timelineEnabled){
+            lines.push(`    pause ${duration}`,`    show expression ${sizedSprite(sprite)} as ${tag} at ${renpyActorTransform(end)}`);
           }
         }
       }
@@ -225,7 +238,7 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
     if (action.type === "showCG") {
       const asset = assetMap.get(action.assetId);
       if (asset) {
-        lines.push(`    show expression ${quote(asset)} as istoriya_cg at truecenter`);
+        lines.push(`    show expression Transform(${quote(asset)}, xysize=(${width}, ${height}), fit="contain") as istoriya_cg at truecenter onlayer istoriya_cg_layer`);
         const transition = transitionName(action.transition);
         if (transition) lines.push(`    with ${transition}`);
         if (action.unlockGallery !== false) {
@@ -236,33 +249,40 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
       continue;
     }
     if (action.type === "hideCG") {
-      lines.push("    hide istoriya_cg");
+      lines.push("    hide istoriya_cg onlayer istoriya_cg_layer");
       const transition = transitionName(action.transition);
       if (transition) lines.push(`    with ${transition}`);
       continue;
     }
     if (action.type === "ambience") {
       const asset=assetMap.get(action.assetId);
-      if(asset)lines.push(`    play ambience ${quote(asset)} volume ${Math.max(0,Math.min(1,Number(action.volume??1)))}${action.loop===false?" noloop":" loop"}`);
+      if(asset)lines.push(`    play ambience ${quote(asset)} volume ${audioVolume(action.volume)}${action.loop===false?" noloop":" loop"}`);
       continue;
     }
     if (action.type === "music") {
       const asset = assetMap.get(action.assetId);
-      if (asset) lines.push(`    play music ${quote(asset)} volume ${Math.max(0, Math.min(1, Number(action.volume) || 0))}${action.fadeIn ? ` fadein ${Math.max(0, Number(action.fadeIn) || 0)}` : ""}${action.loop === false ? " noloop" : " loop"}`);
+      if (asset) lines.push(`    play music ${quote(asset)} volume ${audioVolume(action.volume)}${action.fadeIn ? ` fadein ${audioFade(action.fadeIn)}` : ""}${action.loop === false ? " noloop" : " loop"}`);
       continue;
     }
     if (action.type === "stopMusic") {
       lines.push(`    stop music${action.fadeOut ? ` fadeout ${Math.max(0, Number(action.fadeOut) || 0)}` : ""}`);
       continue;
     }
+    if(action.type==='stopAudio'){
+      if(!AUDIO_CHANNELS.includes(action.channel))throw Error('Выберите, какой звук нужно остановить.');
+      // voice statements queue a file for the next interaction. Cancel that
+      // pending file as well as playback, through the public voice statement.
+      if(action.channel==='voice')lines.push('    voice ""');
+      lines.push(`    stop ${action.channel} fadeout ${audioFade(action.fadeOut)}`);continue;
+    }
     if (action.type === "sound") {
       const asset = assetMap.get(action.assetId);
-      if (asset) lines.push(`    play sound ${quote(asset)} volume ${Math.max(0, Math.min(1, Number(action.volume ?? 1)))}`);
+      if (asset) lines.push(`    play sound ${quote(asset)} volume ${audioVolume(action.volume)}${action.loop===true?' loop':' noloop'}`);
       continue;
     }
     if (action.type === "voice") {
       const asset = assetMap.get(action.assetId);
-      if (asset) lines.push(`    voice ${quote(asset)}`);
+      if (asset) lines.push(`    voice ${quote(voiceFilename(asset,action.volume))}`);
       continue;
     }
     if (action.type === "effect") {
@@ -271,12 +291,12 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
       continue;
     }
     if (action.type === "variable") {
-      lines.push(...compileEffect(action, project.variables ?? []).map((line) => line.replace(/^ {12}/, "    ")));
+      lines.push(...compileEffect(action, project).map((line) => line.replace(/^ {12}/, "    ")));
       continue;
     }
     if (action.type === "flag") {
       const flag = (project.flags ?? []).find((item) => item.id === action.flagId);
-      if (flag) lines.push(`    $ ${asciiId(flag.id, "flag")} = ${action.value ? "True" : "False"}`);
+      if (flag) lines.push(`    $ ${asciiId(flag.id, "flag")} = ${action.value === true || action.value === 'true' ? "True" : "False"}`);
       continue;
     }
     if (action.type === "event" && scene.timelineEnabled) {lines.push(`    $ renpy.notify(${quote(action.text || "Событие")})`);continue;}
@@ -285,10 +305,9 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
       continue;
     }
     if (action.type === "condition") {
-      const variable = (project.variables ?? []).find((item) => item.id === action.variableId);
-      if (variable) {
-        const compareValue = variable.type === "number" || variable.type === "relationship" ? Number(action.value) || 0 : variable.type === "boolean" ? String(action.value) === "true" || action.value === true : action.value;
-        lines.push(`    if ${asciiId(variable.id, "v")} ${comparisonOperator(action.operator)} ${renpyLiteral(compareValue)}:`, `        jump ${asciiId(action.trueSceneId, "scene")}`, "    else:", `        jump ${asciiId(action.falseSceneId, "scene")}`);
+      const expression = conditionExpression(action.condition??action, project);
+      if (expression) {
+        lines.push(`   ${expression}:`, `        jump ${asciiId(action.trueSceneId, "scene")}`, "    else:", `        jump ${asciiId(action.falseSceneId, "scene")}`);
       }
       continue;
     }
@@ -303,8 +322,8 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
   }
 
   if (scene.timelineEnabled) lines.push("    hide screen say");
-  const lastAction = scene.actions.at(-1);
-  if (!["choice", "condition", "jump", "end"].includes(lastAction?.type)) lines.push(nextSceneId ? `    jump ${asciiId(nextSceneId, "scene")}` : "    return", "");
+  const terminal = storyActions(scene).find(action => ["choice", "condition", "jump", "end"].includes(action.type));
+  if (!terminal) lines.push(nextSceneId ? `    jump ${asciiId(nextSceneId, "scene")}` : "    return", "");
   return lines.map(line => scene.timelineEnabled && line.startsWith("    with ") ? `    $ renpy.transition(${line.slice(9)})` : line).join("\n");
 }
 
@@ -354,7 +373,7 @@ function createTheme(project, dialogueBackground, mainMenuBackground, choiceButt
   return `${GENERATED_NOTICE}${mainMenuBackground ? `init 100 python:\n    gui.main_menu_background = ${quote(mainMenuBackground)}\n` : ""}
 init 100:
     style say_window:
-        yalign ${position}
+        yalign ${renpyFloat(position)}
         background Transform(Image(${quote(background)}, xalign=0.5, yalign=0.5), alpha=${opacity})
     style say_dialogue:
         color ${quote(ui.dialogueTextColor || "#ffffff")}
@@ -364,34 +383,6 @@ init 100:
         size ${Math.max(14, Math.round(Number(ui.narratorFontSize) || 30))}
 ${choiceButton || choiceButtonHover ? `    style choice_button:\n${choiceButton ? `        background Frame(${quote(choiceButton)}, 20, 20)\n` : ""}${choiceButtonHover ? `        hover_background Frame(${quote(choiceButtonHover)}, 20, 20)\n` : ""}` : ""}
 
-transform istoriya_jump(duration=0.5, intensity=1.0):
-    yoffset 0
-    ease duration / 2.0 yoffset int(-90 * intensity)
-    ease duration / 2.0 yoffset 0
-
-transform istoriya_bounce(duration=0.6, intensity=1.0):
-    yoffset 0
-    ease duration / 4.0 yoffset int(-55 * intensity)
-    ease duration / 4.0 yoffset 0
-    ease duration / 4.0 yoffset int(-28 * intensity)
-    ease duration / 4.0 yoffset 0
-
-transform istoriya_pulse(duration=0.6, intensity=1.0):
-    zoom 1.0
-    ease duration / 2.0 zoom 1.0 + (0.08 * intensity)
-    ease duration / 2.0 zoom 1.0
-
-transform istoriya_zoom(duration=0.5, intensity=1.0):
-    zoom max(0.1, 1.0 - (0.25 * intensity))
-    ease duration zoom 1.0
-
-transform istoriya_step_forward(duration=0.5, intensity=1.0):
-    zoom 1.0
-    ease duration zoom 1.0 + (0.12 * intensity)
-
-transform istoriya_step_back(duration=0.5, intensity=1.0):
-    zoom 1.0
-    ease duration zoom max(0.1, 1.0 - (0.12 * intensity))
 `;
 }
 
@@ -440,6 +431,8 @@ function customizeScreens(project, source) {
   const quick = ui.quickMenuButtons ?? {};
   const labels = { Start: "Новая игра", History: "История", Save: "Сохранить", Load: "Загрузить", Preferences: "Настройки", "End Replay": "Завершить повтор", "Main Menu": "Главное меню", About: "Об игре", Help: "Помощь", Quit: "Выход", Back: "Назад", Skip: "Пропуск", Auto: "Авто", "Q.Save": "Быстр. сохранение", "Q.Load": "Быстр. загрузка", Prefs: "Настройки" };
   let result = source;
+  const commonLabels={Return:'Назад','Page {}':'Страница {}','Automatic saves':'Автосохранения','Quick saves':'Быстрые сохранения','empty slot':'Пустой слот',Display:'Экран',Window:'В окне',Fullscreen:'Полный экран','Unseen Text':'Непрочитанный текст','After Choices':'После выбора',Transitions:'Переходы','Text Speed':'Скорость текста','Auto-Forward Time':'Время автоперехода','Music Volume':'Громкость музыки','Sound Volume':'Громкость звуков','Voice Volume':'Громкость голоса','Mute All':'Выключить весь звук',Test:'Проверить',Skipping:'Пропуск'};
+  for(const [from,to]of Object.entries(commonLabels))result=result.replaceAll(`_("${from}")`,`_("${to}")`);
   for (const [from, to] of Object.entries(labels)) result = result.replaceAll(`_("${from}")`, `_("${to}")`);
   const disableLine = (needle) => { result = result.split("\n").map((line) => line.trim() === needle ? `${line.match(/^\s*/)[0]}null` : line).join("\n"); };
   if (menu.gallery !== false) result = result.replace('        textbutton _("Настройки") action ShowMenu("preferences")', '        textbutton _("Галерея") action ShowMenu("istoriya_gallery")\n\n        textbutton _("Настройки") action ShowMenu("preferences")');
@@ -459,21 +452,23 @@ function customizeScreens(project, source) {
 }
 
 function usedResourceIds(project) {
-  const ids = new Set();
+  const ids = uiResourceIds(project);
   if(project.ui?.textStyle?.font)ids.add(project.ui.textStyle.font);
   for(const scene of Object.values(project.scenes??{}))for(const action of scene.actions??[])if(action.textStyle?.font)ids.add(action.textStyle.font);
   const resources = project.resources ?? [];
   const bySource = new Map(resources.map((item) => [item.source, item.id]));
   const addSource = (source) => { const id = bySource.get(source); if (id) ids.add(id); };
   for (const scene of Object.values(project.scenes ?? {})) {
+    for(const layer of scene.images??[]){if(layer.resourceId)ids.add(layer.resourceId);for(const reaction of layer.interactions??[])for(const key of ['voiceAssetId','soundAssetId','resultResourceId'])if(reaction[key])ids.add(reaction[key]);}
     if (scene.backgroundResourceId) ids.add(scene.backgroundResourceId); else addSource(scene.background);
-    for (const action of scene.actions ?? []) { if (action.assetId) ids.add(action.assetId); if (action.voiceAssetId) ids.add(action.voiceAssetId); }
+    for (const action of scene.actions ?? []) { for(const key of ['assetId','voiceAssetId','soundAssetId'])if(action[key])ids.add(action[key]); }
   }
   for (const character of project.characters ?? []) {
     if (character.portraitResourceId) ids.add(character.portraitResourceId); else addSource(character.portrait);
     for (const sprite of character.sprites ?? []) { if (sprite.resourceId) ids.add(sprite.resourceId); else addSource(sprite.source); }
   }
   for (const section of project.gallery?.sections ?? []) for (const item of section.items ?? []) if (item.resourceId) ids.add(item.resourceId);
+  for(const item of project.items??[])if(item.iconResourceId)ids.add(item.iconResourceId);
   for (const id of [project.ui?.dialogueBackgroundResourceId, project.ui?.mainMenuBackgroundResourceId].filter(Boolean)) ids.add(id);
   [project.ui?.dialogueBackground, project.ui?.mainMenuBackground, project.ui?.choiceButton, project.ui?.choiceButtonHover].forEach(addSource);
   return ids;
@@ -482,10 +477,11 @@ function usedResourceIds(project) {
 function createScript(project, backgroundMap, assetMap = new Map(), spriteMap = new Map(), startSceneId = null, startActionId = null) {
   project = resolveStoryProject(project);
   const firstSceneId = project.scenes[startSceneId] ? startSceneId : project.chapters?.[0]?.scenes?.[0] ?? Object.keys(project.scenes)[0];
-  const declarations = [`init python:\n    renpy.music.register_channel("ambience", mixer="sfx", loop=True)`, `define istoriya_narrator = Character(None, what_style="istoriya_narrator")`];
-  for (const character of project.characters ?? []) declarations.push(`define ${asciiId(character.id, "character")} = Character(${quote(character.name)}, color=${quote(character.color || "#ffffff")})`);
-  for (const variable of project.variables ?? []) declarations.push(`default ${asciiId(variable.id, "v")} = ${renpyLiteral(variable.initial)}`);
-  for (const flag of project.flags ?? []) declarations.push(`default ${asciiId(flag.id, "flag")} = ${flag.initial ? "True" : "False"}`);
+  const declarations = [`init python:\n    renpy.music.register_channel("ambience", mixer="sfx", loop=True)\n    renpy.add_layer("istoriya_cg_layer", above="master")\n    config.tag_layer["istoriya_cg"] = "istoriya_cg_layer"`, `define istoriya_narrator = Character(None, what_style="istoriya_narrator")`];
+  const dialogueUi=gameUi(project).dialogue;
+  for (const character of project.characters ?? []) {const imageTag=asciiId(character.id,'actor');declarations.push(`define ${asciiId(character.id, "character")} = Character(${quote(character.name)}, color=${quote(dialogueUi.enabled?dialogueUi.name.color:character.color || "#ffffff")}, image=${quote(imageTag)})`);const portrait=spriteMap.get(`${character.id}:portrait`)??spriteMap.get(`${character.id}:default`);if(portrait&&dialogueUi.enabled&&dialogueUi.portrait.visible)declarations.push(`image side ${imageTag} = ${quote(portrait)}`);}
+  for (const variable of project.variables ?? []) declarations.push(`default ${asciiId(variable.id, "v")} = ${renpyLiteral(scalarValue(variable.type,variable.initial))}`);
+  for (const flag of project.flags ?? []) declarations.push(`default ${asciiId(flag.id, "flag")} = ${scalarValue('boolean',flag.initial) ? "True" : "False"}`);
   const orderedSceneIds = (project.chapters ?? []).flatMap((chapter) => chapter.scenes ?? []);
   const nextSceneById = new Map(orderedSceneIds.map((sceneId, index) => [sceneId, orderedSceneIds[index + 1] ?? null]));
   const scenes = Object.values(project.scenes).map((scene) => compileScene(scene, project, backgroundMap, nextSceneById.get(scene.id), assetMap, spriteMap));
@@ -495,9 +491,10 @@ function createScript(project, backgroundMap, assetMap = new Map(), spriteMap = 
     entry = "istoriya_preview_entry";
     const backgrounds = new Map(backgroundMap);
     backgrounds.set(entry, backgroundMap.get(firstSceneId));
-    scenes.push(compileScene({ ...project.scenes[firstSceneId], id: entry, actions: project.scenes[firstSceneId].actions.slice(offset) }, project, backgrounds, nextSceneById.get(firstSceneId), assetMap, spriteMap));
+    scenes.push(compileScene({ ...project.scenes[firstSceneId], id: entry, sourceSceneId:firstSceneId,actions: project.scenes[firstSceneId].actions.slice(offset) }, project, backgrounds, nextSceneById.get(firstSceneId), assetMap, spriteMap));
   }
   return `${GENERATED_NOTICE}${declarations.join("\n")}
+${interactionScript(project,assetMap,{quote,asciiId,conditionExpression,sayAppearance,compileEffect})}
 
 label start:
     jump ${asciiId(entry, "scene")}
@@ -535,6 +532,8 @@ function createAndroidConfig(project) {
 }
 
 export async function compileProject(project, destination, options) {
+  assertProjectShape(project);
+  const uiErrors=uiLayoutProblems(project);if(uiErrors.length)throw Error(uiErrors.map(e=>e.message).join(' '));
   if (!project?.meta || !project?.scenes) throw new Error("Файл проекта повреждён или имеет неизвестный формат.");
   if (!destination || path.resolve(destination) === path.parse(path.resolve(destination)).root) throw new Error("Небезопасная папка назначения.");
   const sdkPath = path.resolve(options.sdkPath);
@@ -544,15 +543,15 @@ export async function compileProject(project, destination, options) {
   const generatedAssetsDir = path.join(gameDir, "assets", "generated");
   const guiDir = path.join(gameDir, "gui");
   await Promise.all([fs.mkdir(generatedImagesDir, { recursive: true }), fs.mkdir(generatedAssetsDir, { recursive: true })]);
-  await fs.cp(path.join(sdkPath, "gui", "game", "gui"), guiDir, { recursive: true, force: true });
-  await fs.copyFile(path.join(sdkPath, "gui", "game", "guisupport.rpy"), path.join(gameDir, "guisupport.rpy"));
-  const guiTemplate = await fs.readFile(path.join(sdkPath, "gui", "game", "gui.rpy"), "utf8");
   const width = Number(project.meta.resolution?.width) || 1920;
   const height = Number(project.meta.resolution?.height) || 1080;
-  const guiSource = guiTemplate.replace(/gui\.init\(\s*1280\s*,\s*720\s*\)/, `gui.init(${width}, ${height})`);
-  await fs.writeFile(path.join(gameDir, "gui.rpy"), guiSource, "utf8");
-  const screensTemplate = await fs.readFile(path.join(sdkPath, "gui", "game", "screens.rpy"), "utf8");
-  await fs.writeFile(path.join(gameDir, "screens.rpy"), customizeScreens(project, screensTemplate), "utf8");
+  const generatedGui=await generateGameGui(sdkPath,gameDir,width,height);
+  await fs.writeFile(path.join(gameDir, "gui.rpy"), generatedGui.gui, "utf8");
+  // Overwrite legacy compiler-owned support and invalidate its old bytecode.
+  // Never ship SDK GUI regeneration/imports into a standalone game.
+  await fs.writeFile(path.join(gameDir, "guisupport.rpy"), `${GENERATED_NOTICE}init -100 python in gui:\n    def scale(n):\n        return int(n)\n`, "utf8");
+  await fs.rm(path.join(gameDir,'guisupport.rpyc'),{force:true});
+  await fs.writeFile(path.join(gameDir, "screens.rpy"), customizeScreens(project, generatedGui.screens), "utf8");
 
   const assetMap = new Map();
   const assetBySource = new Map();
@@ -575,7 +574,7 @@ export async function compileProject(project, destination, options) {
       const asset = await materializeAsset(character.portrait, path.join(generatedImagesDir, asciiId(`${character.id}_portrait`, "character")), assetsRoot);
       defaultSprite = path.relative(gameDir, asset).split(path.sep).join("/");
     }
-    if (defaultSprite) spriteMap.set(`${character.id}:default`, defaultSprite);
+    if (defaultSprite) {spriteMap.set(`${character.id}:default`, defaultSprite);spriteMap.set(`${character.id}:portrait`,defaultSprite);}
     for (const sprite of character.sprites ?? []) {
       let relative = sprite.resourceId ? assetMap.get(sprite.resourceId) : null;
       if (!relative && sprite.source) {
@@ -596,7 +595,7 @@ export async function compileProject(project, destination, options) {
 
   const backgroundMap = new Map();
   for (const scene of Object.values(project.scenes)) {
-    if (!scene.background) continue;
+    if (!scene.background && !scene.backgroundResourceId) continue;
     const linked = assetMap.get(scene.backgroundResourceId) ?? assetBySource.get(scene.background);
     if (linked) backgroundMap.set(scene.id, linked);
     else {
@@ -627,6 +626,7 @@ export async function compileProject(project, destination, options) {
   await fs.writeFile(path.join(gameDir, "options.rpy"), createOptions(project, iconPath, cursorPath), "utf8");
   await fs.writeFile(path.join(gameDir, "script.rpy"), createScript(project, backgroundMap, assetMap, spriteMap, options.startSceneId, options.startActionId), "utf8");
   await fs.writeFile(path.join(gameDir, "theme.rpy"), createTheme(project, dialogueBackgroundPath, mainMenuBackgroundPath, choiceButtonPath, choiceButtonHoverPath), "utf8");
+  await fs.writeFile(path.join(gameDir,'ui_custom.rpy'),gameUiScript(project,assetMap,{quote,dialogueBackgroundPath}),'utf8');
   await fs.writeFile(path.join(gameDir, "gallery.rpy"), createGallery(project, assetMap), "utf8");
   await fs.writeFile(path.join(destination, "android.json"), JSON.stringify(createAndroidConfig(project), null, 2), "utf8");
   await fs.writeFile(path.join(destination, "project.vnproject"), JSON.stringify(project, null, 2), "utf8");

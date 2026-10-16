@@ -1,7 +1,7 @@
 export const createId = (prefix) => `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
 
 export const defaultProject = {
-  schemaVersion: 2,
+  schemaVersion: 6,
   id: "project_northern_light",
   meta: {
     title: "Северный свет",
