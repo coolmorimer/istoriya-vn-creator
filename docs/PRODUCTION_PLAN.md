@@ -4,6 +4,10 @@
 
 ## Вывод аудита
 
+### Внешнее ограничение проверки выпуска — 16 октября2026
+
+Ветка `production/0.2.32` опубликована с прямого разрешения владельца. GitHub Actions38876419066 отклонён до выполнения шагов из-за billing-lock аккаунта. Это не результат тестов продукта; hosted install/upgrade остаётся открытым. Оплата и настройки аккаунта не менялись, основная ветка/публичные Releases не обновлялись. Повторить workflow после снятия ограничения, сохранить отчёты и только затем засчитать удалённый gate. Локальные296 JS/37 Rust/4 Sites и native/packaged проверки не заменяют этот gate либо оставшуюся полную матрицу ниже.
+
 ### Запись, точность звука и повторяемый release-gate — 0.2.32
 
 Микрофон → локальный PCM WAV → общий author attach/Undo; разрешение/отмена/поздний ответ/черновик/освобождение. Preview получил transient fade envelopes с реальным HTMLAudio и mixer0. JSON backup заменяется через отдельно synced staging, добавлены4 commit-boundary проверки.296 JS/37 Rust/4 Sites, native запись синтетического потока/reopen/audition/UI Build, packaged33/33. Новый release-smoke подтверждает native Save/reopen/Build/две ветки/FileSaveLoad/startup. Hosted installer workflow подготовлен для0.1.1→candidate→обычный UI→reinstall→uninstall, но remote результат засчитывается только после фактического run. RELEASE_0.2.32.md сохраняет ограничения и неудачные QA-попытки. Все остальные этапы остаются открытыми; physical mic/Windows10/11/DPI/cold/RAM/power-loss не подменяются этим этапом.

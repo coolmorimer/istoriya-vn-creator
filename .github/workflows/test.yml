@@ -35,3 +35,17 @@ jobs:
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           node scripts/verify-hosted-installer.mjs "$env:RUNNER_TEMP/istoriya-setup/Istoriya-Rust-Setup-$version-x64.exe"
           if ($LASTEXITCODE) { throw 'Hosted installer acceptance failed' }
+      - name: Preserve acceptance reports even after failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-acceptance-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/IstoriyaQA/**/*.json
+            ${{ runner.temp }}/IstoriyaQA/**/*.log
+            ${{ runner.temp }}/Istoriya-installer-*/*.json
+            ${{ runner.temp }}/Istoriya-installer-*/*.log
+            ${{ runner.temp }}/istoriya-setup/packaging-manifest.json
+            ${{ runner.temp }}/istoriya-setup/SHA256SUMS.txt
