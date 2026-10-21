@@ -9,8 +9,8 @@ import {assertProjectShape} from '../runtime/project-format.mjs';
 import {compilerInternals} from '../runtime/compiler.mjs';
 const quote=JSON.stringify;
 test('visual UI defaults fit landscape and portrait games; old projects retain standard screens',()=>{
- for(const resolution of [{width:1920,height:1080},{width:1080,height:1920}]){const p=createProject({resolution});assert.equal(p.schemaVersion,6);assert.deepEqual(uiLayoutProblems(p),[]);assert.equal(gameUi(p).menu.enabled,true);assert.deepEqual(pixelRect({x:10,y:20,w:30,h:40},resolution.width,resolution.height),{x:Math.round(resolution.width*.1),y:Math.round(resolution.height*.2),w:Math.round(resolution.width*.3),h:Math.round(resolution.height*.4)});}
- const old=createProject();delete old.ui.layout;old.schemaVersion=4;assertProjectShape(old);assert.equal(gameUi(old).menu.enabled,false);assert.doesNotMatch(gameUiScript(old,new Map(),{quote}),/screen main_menu|screen say|screen choice/);
+ for(const resolution of [{width:1920,height:1080},{width:1080,height:1920}]){const p=createProject({resolution});assert.equal(p.schemaVersion,8);assert.deepEqual(uiLayoutProblems(p),[]);assert.equal(gameUi(p).menu.enabled,true);assert.deepEqual(pixelRect({x:10,y:20,w:30,h:40},resolution.width,resolution.height),{x:Math.round(resolution.width*.1),y:Math.round(resolution.height*.2),w:Math.round(resolution.width*.3),h:Math.round(resolution.height*.4)});}
+ const old=createProject();delete old.ui.layout;old.schemaVersion=4;delete old.rpg;assertProjectShape(old);assert.equal(gameUi(old).menu.enabled,false);assert.doesNotMatch(gameUiScript(old,new Map(),{quote}),/screen main_menu|screen say|screen choice/);
 });
 test('UI import checks structure, cycles, impossible bounds, unknown actions and missing images/fonts',()=>{
  const p=createProject();p.ui.layout.dialogue.text.rect.x=NaN;assert.throws(()=>assertProjectShape(p),/область/);

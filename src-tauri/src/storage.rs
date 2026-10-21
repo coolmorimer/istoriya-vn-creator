@@ -8,7 +8,7 @@ const MEDIA:[&str;9]=["source","portrait","background","icon","cursor","dialogue
 pub fn safe_id(project:&Value)->String {let id:String=project["id"].as_str().unwrap_or("project").chars().filter(|c|c.is_ascii_alphanumeric()||*c=='-'||*c=='_').take(100).collect();if id.is_empty(){"project".into()}else{id}}
 pub fn validate(p:&Value)->Result<(),String>{
     if !p["scenes"].is_object()||!p["meta"].is_object(){return Err("Повреждённый файл проекта".into());}
-    if p["schemaVersion"].as_u64().unwrap_or(2)>6{return Err("Нужна более новая версия редактора".into());}
+    if p["schemaVersion"].as_u64().unwrap_or(2)>8{return Err("Нужна более новая версия редактора".into());}
     for s in p["scenes"].as_object().unwrap().values(){if !s.is_object()||!s["actions"].is_array(){return Err("Повреждена сцена проекта".into());}}
     Ok(())
 }

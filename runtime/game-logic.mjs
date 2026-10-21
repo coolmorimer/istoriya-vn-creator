@@ -1,7 +1,9 @@
 // Shared semantics for no-code rules. No authored strings are executed as code.
+import {rpgStats,rpgStat,changeRpgStat,validStatChange} from './rpg-model.mjs';
 const operators=new Set(['eq','neq','gt','gte','lt','lte','contains']);
 export const scalarValue=(type,value)=>['number','relationship'].includes(type)?Number(value)||0:type==='boolean'?value===true||value==='true':String(value??'');
 function reference(condition,project){
+ if(condition.statId)return {kind:'stat',id:condition.statId,type:'number',definition:rpgStats(project).find(v=>v.id===condition.statId)};
  if(condition.flagId)return {kind:'flag',id:condition.flagId,type:'boolean',definition:project.flags?.find(v=>v.id===condition.flagId)};
  if(condition.itemId)return {kind:'item',id:condition.itemId,type:'number',definition:project.items?.find(v=>v.id===condition.itemId)};
  return {kind:'variable',id:condition.variableId,definition:project.variables?.find(v=>v.id===condition.variableId),type:project.variables?.find(v=>v.id===condition.variableId)?.type};
@@ -36,7 +38,7 @@ export function evaluateCondition(condition,state,project){
   let result;
   if(c.kind==='all'||c.kind==='any')result=c.kind==='all'?c.conditions.every(visit):c.conditions.some(visit);
   else{
-   const ref=reference(c,project),value=ref.kind==='flag'?state.flags?.[ref.id]:ref.kind==='item'?state.inventory?.[ref.id]:state.variables?.[ref.id];
+   const ref=reference(c,project),value=ref.kind==='stat'?rpgStat(project,state,ref.id):ref.kind==='flag'?state.flags?.[ref.id]:ref.kind==='item'?state.inventory?.[ref.id]:state.variables?.[ref.id];
    const a=scalarValue(ref.type,value),b=scalarValue(ref.type,c.value),op=c.operator??(ref.kind==='item'?'gte':'eq');
    result=({eq:()=>a===b,neq:()=>a!==b,gt:()=>a>b,gte:()=>a>=b,lt:()=>a<b,lte:()=>a<=b,contains:()=>a.includes(b)})[op]();
   }
@@ -49,7 +51,7 @@ export function compileCondition(condition,project,{asciiId,literal}){
   let result;
   if(c.kind==='all'||c.kind==='any')result=`(${c.conditions.map(visit).join(c.kind==='all'?' and ':' or ')})`;
   else{
-   const ref=reference(c,project),a=ref.kind==='item'?`istoriya_inventory.get(${literal(ref.id)}, 0)`:asciiId(ref.id,ref.kind==='flag'?'flag':'v'),b=literal(scalarValue(ref.type,c.value)),op=c.operator??(ref.kind==='item'?'gte':'eq');
+   const ref=reference(c,project),a=ref.kind==='stat'?`_istoriya_rpg_stat(${literal(ref.id)})`:ref.kind==='item'?`istoriya_inventory.get(${literal(ref.id)}, 0)`:asciiId(ref.id,ref.kind==='flag'?'flag':'v'),b=literal(scalarValue(ref.type,c.value)),op=c.operator??(ref.kind==='item'?'gte':'eq');
    result=op==='contains'?`(${b} in ${a})`:`${a} ${{eq:'==',neq:'!=',gt:'>',gte:'>=',lt:'<',lte:'<='}[op]} ${b}`;
   }
   return c.negate?`(not ${result})`:result;
@@ -58,11 +60,12 @@ export function compileCondition(condition,project,{asciiId,literal}){
 export function conditionReferences(condition,kind,id){
  const seen=new Set();const visit=(c,depth)=>{if(!c||typeof c!=='object'||seen.has(c)||depth>8)return false;seen.add(c);if(c.kind==='all'||c.kind==='any')return Array.isArray(c.conditions)&&c.conditions.some(child=>visit(child,depth+1));const source=c.flagId?'flag':c.itemId?'item':'variable';return source===kind&&c[{flag:'flagId',variable:'variableId',item:'itemId'}[kind]]===id;};return visit(condition,0);
 }
-export function effectKind(effect){return ['inventory','flag','variable'].includes(effect.kind)?effect.kind:effect.type==='flag'||effect.flagId?'flag':'variable';}
+export function effectKind(effect){return ['stat','inventory','flag','variable'].includes(effect.kind)?effect.kind:effect.type==='flag'||effect.flagId?'flag':'variable';}
 export function effectProblems(effect,project){
  if(!effect||typeof effect!=='object'||Array.isArray(effect))return ['Некорректный результат.'];
  const kind=effectKind(effect);
- if(effect.kind&&!['flag','variable','inventory'].includes(effect.kind))return ['Неизвестный вид результата.'];
+ if(effect.kind&&!['stat','flag','variable','inventory'].includes(effect.kind))return ['Неизвестный вид результата.'];
+ if(kind==='stat')return !validStatChange(project,effect.statId,effect.operation,effect.value)?['Выберите изменяемый показатель и неотрицательное целое значение.']:[];
  if(kind==='inventory'){
   if(!project.items?.some(i=>i.id===effect.itemId))return ['В результате отсутствует предмет инвентаря.'];
   if(!['add','remove'].includes(effect.operation)||!Number.isInteger(Number(effect.quantity))||Number(effect.quantity)<1)return ['Выберите добавление/изъятие и положительное целое количество.'];
@@ -79,6 +82,7 @@ export function effectProblems(effect,project){
 export function applyGameplayEffect(effect,state,project){
  if(effectProblems(effect,project).length)return false;
  const kind=effectKind(effect);
+ if(kind==='stat')return changeRpgStat(project,state,effect.statId,effect.operation,effect.value);
  if(kind==='flag'){state.flags[effect.flagId]=scalarValue('boolean',effect.value);return true;}
  if(kind==='inventory'){state.inventory??={};state.inventory[effect.itemId]=Math.max(0,(Number(state.inventory[effect.itemId])||0)+(effect.operation==='add'?1:-1)*Number(effect.quantity));return true;}
  const definition=project.variables.find(v=>v.id===effect.variableId),value=scalarValue(definition.type,effect.value),old=scalarValue(definition.type,state.variables[definition.id]);
@@ -88,6 +92,7 @@ export function applyGameplayEffect(effect,state,project){
 export function compileGameplayEffect(effect,project,{asciiId,literal}){
  const errors=effectProblems(effect,project);if(errors.length)throw Error(errors.join(' '));
  const kind=effectKind(effect);
+ if(kind==='stat')return [`_istoriya_rpg_change(${literal(effect.statId)}, ${literal(effect.operation)}, ${Number(effect.value)})`];
  if(kind==='flag')return [`${asciiId(effect.flagId,'flag')} = ${literal(scalarValue('boolean',effect.value))}`];
  if(kind==='inventory'){const key=literal(effect.itemId);return [`istoriya_inventory[${key}] = max(0, istoriya_inventory.get(${key}, 0) ${effect.operation==='add'?'+':'-'} ${Number(effect.quantity)})`];}
  const variable=project.variables.find(v=>v.id===effect.variableId),name=asciiId(variable.id,'v'),value=literal(scalarValue(variable.type,effect.value));

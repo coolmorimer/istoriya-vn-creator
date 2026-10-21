@@ -1,0 +1,30 @@
+# Документация Истории
+
+## Пользователю
+
+- [Установка, обновление и резервная копия](INSTALL.md).
+- [Руководство PDF и автономный HTML со скриншотами](https://github.com/coolmorimer/istoriya-vn-creator/releases/download/v0.2.34/Istoriya-0.2.34-Manual.zip).
+- [Сценарий и послойные примеры](../examples/tea-with-goblins/README.md).
+- [Игровой мир: здоровье, опыт, крафт, NPC и бой](RPG_ENGINE.md).
+- [Камера, ключевые кадры и панели](WORKSPACE_MOTION_UX.md).
+- [Спрайты и трансформации](SPRITES_AND_TRANSFORMS.md).
+
+## Разработчику
+
+- [Окружение, команды и сборка установщика](DEVELOPMENT.md).
+- [Карта исходников](../PROJECT_MAP.md).
+- [Границы интерактивного движка](ENGINE_SCOPE.md).
+- [Принципы интерфейса игрового мира](RPG_ENGINE_UX.md).
+- [Лицензии компонентов](../THIRD_PARTY_NOTICES.md).
+- Исходник руководства: [текст](manual034/content.json), [реальные скриншоты](manual034/screens), [генератор](../scripts/build-user-guide.py).
+
+## Готовность и релизы
+
+- [0.2.34: функции и результаты локальной проверки](RELEASE_0.2.34.md).
+- [0.2.34: описание публичной поставки](releases/0.2.34.md).
+- [0.2.33: камера и панели](RELEASE_0.2.33.md).
+- [Полная матрица приёмки](MVP_ACCEPTANCE.md).
+- [План production](PRODUCTION_PLAN.md).
+- [История изменений](../CHANGELOG.md).
+
+Старые `RELEASE_*.md` — исторические отчёты конкретных версий. Их локальные пути и результаты не обозначают актуальный файл для загрузки. Текущие установщики и готовые примеры находятся только в [GitHub Releases](https://github.com/coolmorimer/istoriya-vn-creator/releases).

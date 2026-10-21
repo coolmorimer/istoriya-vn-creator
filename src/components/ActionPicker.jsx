@@ -22,6 +22,8 @@ export function ActionPicker({ actions, onChoose, onClose }) {
   }, [onClose]);
   const groups = [
     ["История", ["dialogue", "narration", "choice", "explore", "jump", "end"]],
+    ['Движение',['keyframes']],
+    ['Игровые системы',['rpg']],
     ["Сцена и персонажи", ["background", "showCharacter", "hideCharacter", "changeSprite", "moveCharacter", "characterAnimation", "showCG", "hideCG", "effect"]],
     ["Звук", ["music", "stopMusic", "stopAudio", "sound", "voice", "ambience"]],
     ["Логика", ["variable", "flag", "condition", "event", "pause"]],

@@ -46,6 +46,7 @@ export function interactionScript(project,assetMap,{quote,asciiId,conditionExpre
 default istoriya_hidden_props = set()
 default istoriya_used_interactions = set()
 default istoriya_prop_images = {}
+default _istoriya_motion_props = {}
 
 init python:
     import json as _istoriya_json
@@ -67,6 +68,8 @@ ${exploreConditions.join('\n')}
         return _istoriya_resource_paths.get(istoriya_prop_images.get(_istoriya_key(scene_id, layer_id)), fallback)
     def _istoriya_allowed(scene_id, layer_id, reaction_id):
         p = _istoriya_props.get(scene_id, {}).get(layer_id)
+        if p:
+            p = dict(p, **_istoriya_json.loads(_istoriya_motion_props.get(layer_id, "{}")))
         if not p or not p["visible"] or p["opacity"] == 0 or not _istoriya_prop_visible(scene_id, layer_id):
             return False
         r = next((r for r in p["interactions"] if r["id"] == reaction_id), None)
@@ -90,7 +93,8 @@ ${exploreConditions.join('\n')}
         image = _istoriya_prop_source(scene_id, p["id"], p["source"])
         return Transform(image, xysize=(p["widthPx"], p["heightPx"]), fit="contain")
     def _istoriya_prop_transform(p):
-        return Transform(xpos=float(p["x"])/100.0, ypos=float(p["y"])/100.0, xanchor=0.5, yanchor=1.0, zoom=float(p["scale"])/100.0, rotate=p["rotation"], alpha=float(p["opacity"])/100.0, xzoom=-1 if p.get("flip") else 1, rotate_pad=False, transform_anchor=True)
+        p = dict(p, **_istoriya_json.loads(_istoriya_motion_props.get(p["id"], "{}")))
+        return Transform(xpos=float(p["x"])/100.0, ypos=float(p["y"])/100.0, xanchor=0.5, yanchor=1.0, zoom=float(p["scale"])/100.0, rotate=p["rotation"], alpha=float(p["opacity"])/100.0, xzoom=-1 if p.get("flip") else 1, blur=p.get("blur",0), rotate_pad=False, transform_anchor=True)
     def _istoriya_install_props(scene_id):
         if renpy.showing("istoriya_cg", layer="istoriya_cg_layer"):
             return

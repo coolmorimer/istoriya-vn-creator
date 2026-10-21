@@ -1,6 +1,6 @@
 [package]
 name = "istoriya"
-version = "0.2.32"
+version = "0.2.34"
 edition = "2021"
 description = "История — конструктор визуальных новелл"
 

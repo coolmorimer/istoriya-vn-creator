@@ -1,5 +1,13 @@
 # Карта проекта
 
+## Как устроен репозиторий
+
+Основной путь: `src/` (редактор) → `src-tauri/` (нативные операции) → `runtime/` (правила и компилятор) → готовая Ren’Py-игра. Пользовательский `.vnproject` — самостоятельный формат данных, не файл Ren’Py.
+
+Документация разделена по назначению: [оглавление](docs/README.md), [установка](docs/INSTALL.md), [разработка](docs/DEVELOPMENT.md), [описания поставок](docs/releases/), исторические отчёты `docs/RELEASE_*.md`. Сгенерированные установщики, PDF/HTML и большие portable-примеры находятся в GitHub Releases, не в дереве исходников.
+
+## Точки входа
+
 | Путь | Назначение |
 | --- | --- |
 | `src-tauri/` | Основная нативная оболочка Rust/Tauri, файлы, диалоги, окно и запуск компилятора |
@@ -9,6 +17,12 @@
 | `src/platform/nativeMedia.js`, `nativeStorage.js`, `recoveryExport.js` | Renderer/file transport bridge, очередь сохранения без потери поздних правок, portable/reference recovery |
 | `scripts/prepare-media-load-qa.mjs`, `verify-native-media-qa.mjs` | Ограниченный native load benchmark, hashes и дисковая проверка восстановления/пустого проекта |
 | `src/components/WorkspaceLayout.jsx`, `src/domain/workspaceLayout.js`, `src/workspace.css` | Регулируемая и сохраняемая компоновка панелей |
+| `src/components/DockPanel.jsx`, `src/components/dock-panel.css` | Внутренние открепляемые панели, изменение размеров и возврат в компоновку |
+| `runtime/keyframes.mjs`, `src/components/KeyframeFields.jsx`, `tests/keyframes.test.mjs` | Общая модель 2D-камеры/ключей, редактирование, семплирование и интерполяции |
+| `runtime/rpg-model.mjs`, `runtime/rpg-script.mjs`, `src/components/RpgWorkspace.jsx`, `src/components/RpgGameplay.jsx` | Определения игрового мира, отдельное состояние игрока и экспорт RPG |
+| `src/components/RpgActionFields.jsx`, `src/components/ReadyPacks.jsx`, `src/domain/readyPacks.js`, `public/assets/packs/` | No-code действия, явный импорт набора и графика с происхождением |
+| `scripts/verify-keyframes.mjs`, `scripts/verify-rpg.mjs`, `tests/rpg.test.mjs` | Регрессии модели и выполнение в реальном Ren’Py runtime |
+| `docs/manual034/`, `scripts/build-user-guide.py` | Текст инструкции, реальные скриншоты и генератор PDF/HTML |
 | `src/domain/canvasViewport.js`, `src/components/useCanvasViewport.js`, `src/components/CanvasViewControls.jsx` | Независимая навигация вида, истинный zoom/Fit, pointer ownership, клавиатура и восстановление слоя вне кадра |
 | `tests/canvas-viewport.test.mjs`, `scripts/verify-native-canvas.mjs`, `scripts/verify-native-canvas-pixels.mjs` | Модель viewport, дисковая проверка UI-правок/portable, actual packaged geometry и пиксели без переноса zoom в игру |
 | `src/components/ProjectSceneTree.jsx`, `src/domain/sceneTree.js`, `src/components/scene-tree.css` | Виртуальное дерево глав/сцен, поиск, collapse persistence, keyboard/current reveal |

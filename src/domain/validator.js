@@ -6,6 +6,8 @@ import {conditionProblems,effectProblems} from '../../runtime/game-logic.mjs';
 import {logicPotential} from '../../runtime/logic-diagnostics.mjs';
 import {uiLayoutProblems,uiResourceIds} from '../../runtime/game-ui.mjs';
 import {audioProblems,isAudioResource} from '../../runtime/audio-model.mjs';
+import {storyboardFrames} from './storyboard.js';
+import {rpgProblems,rpgActionProblems,rpgConfig} from '../../runtime/rpg-model.mjs';
 const terminalTypes = new Set(["choice", "condition", "jump", "end"]);
 
 function issue(severity, code, message, target = {}) {
@@ -30,6 +32,9 @@ export function validateProject(project) {
   catch (error) { return { valid: false, issues: [issue('error', 'invalid-project', error.message)], summary: {errors:1,warnings:0} }; }
   project = resolveStoryProject(project);
   const issues = [];
+  rpgProblems(project).forEach((message,index)=>issues.push(issue('error','rpg-settings-'+index,message)));
+  for(const location of rpgConfig(project).locations)conditionProblems(location.condition,project).forEach((message,index)=>issues.push(issue('error','rpg-location-'+location.id+'-'+index,message)));
+  for(const scene of Object.values(project.scenes))for(const action of scene.actions??[])if(action.type==='rpg'){for(const message of rpgActionProblems(action,project))issues.push(issue('error','rpg-action',message,{sceneId:scene.id,actionId:action.id}));if(scene.timelineEnabled)issues.push(issue('error','rpg-timing','Игровое меню требует последовательной сцены.',{sceneId:scene.id,actionId:action.id}));}
   const scenes = project?.scenes ?? {};
   const resources = project?.resources ?? [];
   const characters = project?.characters ?? [];
@@ -55,6 +60,7 @@ export function validateProject(project) {
     const scene = scenes[sceneId];
     for(const layer of scene.images??[]) {if(!resourceIds.has(layer.resourceId))issues.push(issue('error','broken-image-layer',`У слоя «${layer.name||'Изображение'}» отсутствует ресурс.`,{sceneId,resourceId:layer.resourceId}));else usedResources.add(layer.resourceId);}
     const executed = storyActions(scene);
+    if(!scene.timelineEnabled){const frames=storyboardFrames(project,scene);for(let i=0;i<scene.actions.length;i++){const action=scene.actions[i];if(action.type!=='keyframes')continue;const before=i?frames[i-1].frame:null,t=action.target;if(t.kind==='character'&&!(before?.layers??scene.characters??[]).some(l=>l.characterId===t.id&&l.visible!==false))issues.push(issue('error','motion-hidden-character','Сначала покажите персонажа, затем добавьте его движение.',{sceneId,actionId:action.id}));if(t.kind==='background'&&!(before?.background??backgroundSource(project,scene)))issues.push(issue('error','motion-missing-background','Сначала выберите фон, затем добавьте его движение.',{sceneId,actionId:action.id}));}}
     const terminal = executed.find(action=>terminalTypes.has(action.type));
     const hasExplore=executed.some((action,i)=>action.type==='explore'&&(!terminal||i<executed.indexOf(terminal)));
     for(const layer of scene.images??[])for(const reaction of layer.interactions??[]) {

@@ -3,6 +3,8 @@ import {renpyBackground} from './background-transform.mjs';
 import {sceneImages} from './image-layers.mjs';
 import {sceneCharacterLayers,layerZOrder} from './visual-order.mjs';
 import {interactionScript,explorationLines} from './interaction-script.mjs';
+import {rpgScript} from './rpg-script.mjs';
+import {rpgActionProblems,rpgConfig} from './rpg-model.mjs';
 import {compileCondition,compileGameplayEffect,scalarValue} from './game-logic.mjs';
 import {gameUi,uiResourceIds,uiLayoutProblems} from './game-ui.mjs';
 import {gameUiScript} from './game-ui-script.mjs';
@@ -11,6 +13,7 @@ import {renpyActorTransform,renpyFloat} from './renpy-transform.mjs';
 import {generateGameGui} from './gui-template.mjs';
 import {animationSettings,animationEnd,renpyAnimationLines} from './character-animation.mjs';
 import { textAppearance } from './text-style.mjs';
+import {motionDuration,motionSample,renpyMotionLines,motionWarperScript} from './keyframes.mjs';
 import fs from "node:fs/promises";
 import { timelineEvents } from "./timeline-model.mjs";
 import { resolveStoryProject, storyActions } from "./story-routing.mjs";
@@ -99,15 +102,17 @@ function sayAppearance(project, action, assetMap) {
   return ` (what_font=${quote(font)}, what_size=${Math.max(10,Number(style.size)||32)}, what_color=${quote(style.color)}, what_bold=${style.bold?'True':'False'}, what_italic=${style.italic?'True':'False'}, what_underline=${style.underline?'True':'False'}, what_outlines=[${outlines.join(', ')}], what_slow_cps=${Math.max(0,Number(style.speed)||0)})`;
 }
 function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new Map(), spriteMap = new Map()) {
-  const lines = [`label ${asciiId(scene.id, "scene")}:`, '    scene onlayer istoriya_cg_layer'];
+  const lines = [`label ${asciiId(scene.id, "scene")}:`, '    camera', '    $ _istoriya_motion_props = {}', '    scene onlayer istoriya_cg_layer'];
   const background = backgroundMap.get(scene.id);
+  if(rpgConfig(project).enabled)lines.push('    show screen istoriya_rpg_hud');
   const width = Number(project.meta.resolution.width) || 1920;
   const height = Number(project.meta.resolution.height) || 1080;
   const propSceneId=scene.sourceSceneId??scene.id;
   const sizedSprite = (sprite) => `Transform(${quote(sprite)}, xysize=(${Math.round(width * .34)}, ${Math.round(height * .88)}), fit="contain")`;
   const characters=sceneCharacterLayers(scene);
+  const imageLayers=new Map(sceneImages(scene).map(l=>[l.id,{...l}]));let activeBackground=background,activeBackgroundTransform=scene.backgroundTransform??{},backgroundTag='istoriya_scene_bg';
   const visualLayers = new Map(characters.filter(layer=>layer.visible!==false).map(layer=>[layer.characterId,{...layer}]));
-  const renderImages=()=>{for(const layer of sceneImages(scene)){const asset=assetMap.get(layer.resourceId);if(!asset||layer.visible===false)continue;const interactive=layer.interactions?.length,source=interactive?`_istoriya_prop_source(${quote(propSceneId)}, ${quote(layer.id)}, ${quote(asset)})`:quote(asset);if(interactive)lines.push(`    if _istoriya_prop_visible(${quote(propSceneId)}, ${quote(layer.id)}):`);lines.push(`${interactive?'        ':'    '}show expression Transform(${source}, xysize=(${Math.round(width*layer.width/100)}, ${Math.round(height*layer.height/100)}), fit="contain") as ${asciiId(layer.id,'image')} at ${renpyActorTransform(layer)} zorder ${Math.round(layer.zOrder)}`);}};
+  const renderImages=()=>{for(const layer of imageLayers.values()){const asset=assetMap.get(layer.resourceId);if(!asset||layer.visible===false)continue;const interactive=layer.interactions?.length,source=interactive?`_istoriya_prop_source(${quote(propSceneId)}, ${quote(layer.id)}, ${quote(asset)})`:quote(asset);if(interactive)lines.push(`    if _istoriya_prop_visible(${quote(propSceneId)}, ${quote(layer.id)}):`);lines.push(`${interactive?'        ':'    '}show expression Transform(${source}, xysize=(${Math.round(width*layer.width/100)}, ${Math.round(height*layer.height/100)}), fit="contain") as ${asciiId(layer.id,'image')} at ${renpyActorTransform(layer)} zorder ${Math.round(layer.zOrder)}`);}};
   if (background) {
     lines.push(`    scene expression ${renpyBackground(background,width,height,scene.backgroundTransform)} as istoriya_scene_bg zorder -100`);
     const transition = transitionName(scene.transition);
@@ -129,6 +134,14 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
 
   if (scene.timelineEnabled) lines.push('    $ _timeline_origin = renpy.get_game_runtime()', '    $ _timeline_hold = 0.0');
   for (const action of (scene.timelineEnabled ? timelineEvents(scene) : scene.actions)) {
+    if(action.type==='keyframes'){
+      const target=action.target,end=motionSample(action,motionDuration(action));let header,flip=false,settle;
+      if(target.kind==='camera'){header='    camera:';settle=`    camera at Transform(xpos=${renpyFloat(end.x/100)}, ypos=${renpyFloat(end.y/100)}, anchor=(0.5,0.5), zoom=${renpyFloat(end.scale/100)}, rotate=${end.rotation}, alpha=${renpyFloat(end.opacity/100)}, blur=${end.blur??0}, rotate_pad=False, transform_anchor=True)`;}
+      if(target.kind==='character'){const layer=visualLayers.get(target.id),sprite=layer&&(spriteMap.get(`${target.id}:${layer.spriteId??'default'}`)??spriteMap.get(`${target.id}:default`));if(!layer||!sprite)throw Error('Персонаж ключевых кадров не показан. Добавьте его перед движением.');header=`    show expression ${sizedSprite(sprite)} as ${asciiId(target.id,'actor')} zorder ${layer.zOrder??10}:`;flip=layer.flip;Object.assign(layer,end);settle=`    show expression ${sizedSprite(sprite)} as ${asciiId(target.id,'actor')} at ${renpyActorTransform(layer)}`;}
+      if(target.kind==='image'){const layer=imageLayers.get(target.id),asset=assetMap.get(layer?.resourceId);if(!layer||!asset||layer.visible===false)throw Error('Предмет ключевых кадров недоступен.');flip=layer.flip;const source=layer.interactions?.length?`_istoriya_prop_source(${quote(propSceneId)},${quote(layer.id)},${quote(asset)})`:quote(asset),display=`Transform(${source}, xysize=(${Math.round(width*layer.width/100)},${Math.round(height*layer.height/100)}), fit="contain")`;header=`    show expression ${display} as ${asciiId(layer.id,'image')} zorder ${layer.zOrder}:`;Object.assign(layer,end);settle=`    show expression ${display} as ${asciiId(layer.id,'image')} at ${renpyActorTransform(layer)}`;lines.push(`    $ _istoriya_motion_props[${quote(layer.id)}] = ${renpyLiteral(JSON.stringify(end))}`);}
+      if(target.kind==='background'){if(!activeBackground)throw Error('Для движения фона сначала выберите фон.');const t=activeBackgroundTransform,display=`Transform(${quote(activeBackground)}, xysize=(${Math.round(width*(t.width??100)/100)},${Math.round(height*(t.height??100)/100)}), fit=${quote(t.fit??'fill')})`;header=`    show expression ${display} as ${backgroundTag} zorder -100:`;activeBackgroundTransform={...t,...end};settle=`    show expression ${renpyBackground(activeBackground,width,height,activeBackgroundTransform)} as ${backgroundTag} zorder -100`;}
+      lines.push(header,...renpyMotionLines(action,{flip}));if(!scene.timelineEnabled)lines.push(`    $ renpy.pause(${renpyFloat(motionDuration(action))}, hard=True)`,settle);continue;
+    }
     const actionSound=assetMap.get(action.soundAssetId);
     if(actionSound)lines.push(`    play sound ${quote(actionSound)} volume ${audioVolume(action.soundVolume)}`);
     // Track the effective appearance so a move does not reset the current emotion or scale.
@@ -146,12 +159,13 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
       lines.push('    hide screen say'); continue;
     }
     if (action.type === 'timelineStopAudio') { lines.push(`    stop ${action.channel}`); continue; }
-    if (action.type === 'timelineBackgroundEnd') { lines.push('    hide istoriya_timeline_bg'); continue; }
+    if (action.type === 'timelineBackgroundEnd') { lines.push('    hide istoriya_timeline_bg');activeBackground=background;activeBackgroundTransform=scene.backgroundTransform??{};backgroundTag='istoriya_scene_bg'; continue; }
     if (scene.timelineEnabled && action.type === 'pause') continue;
     if (action.type === 'pause') { lines.push(`    pause ${Math.max(.1,Number(action.duration)||1)}`); continue; }
     if(action.type==='explore'){lines.push(...explorationLines(propSceneId,action,quote));continue;}
     if (action.type === "background") {
       const asset = assetMap.get(action.assetId);
+      activeBackground=asset;activeBackgroundTransform=action.backgroundTransform??{};backgroundTag=scene.timelineEnabled?'istoriya_timeline_bg':'istoriya_scene_bg';
       if (asset) {
         const displayable=renpyBackground(asset,width,height,action.backgroundTransform);
         lines.push(scene.timelineEnabled ? `    show expression ${displayable} as istoriya_timeline_bg zorder -100` : action.preserveCharacters===true?`    show expression ${displayable} as istoriya_scene_bg zorder -100`:`    scene expression ${displayable} as istoriya_scene_bg zorder -100`);
@@ -313,6 +327,12 @@ function compileScene(scene, project, backgroundMap, nextSceneId, assetMap = new
     }
     if (action.type === "jump") {
       if (project.scenes[action.targetSceneId]) lines.push(`    jump ${asciiId(action.targetSceneId, "scene")}`);
+      continue;
+    }
+    if(action.type==='rpg'){
+      const errors=rpgActionProblems(action,project);if(errors.length)throw Error(errors.join(' '));if(scene.timelineEnabled)throw Error('Игровое меню требует последовательной сцены.');
+      if(action.operation==='stat')lines.push(`    $ _istoriya_rpg_change(${quote(action.statId)}, ${quote(action.statOperation)}, ${Number(action.value)})`);
+      else lines.push(`    call istoriya_rpg_open(${quote(action.operation)}, ${quote(action.actorId??'')})`);
       continue;
     }
     if (action.type === "end") {
@@ -495,6 +515,7 @@ function createScript(project, backgroundMap, assetMap = new Map(), spriteMap = 
   }
   return `${GENERATED_NOTICE}${declarations.join("\n")}
 ${interactionScript(project,assetMap,{quote,asciiId,conditionExpression,sayAppearance,compileEffect})}
+${rpgScript(project,{quote,asciiId,conditionExpression})}
 
 label start:
     jump ${asciiId(entry, "scene")}
@@ -594,6 +615,7 @@ export async function compileProject(project, destination, options) {
   }
 
   const backgroundMap = new Map();
+  await fs.writeFile(path.join(gameDir,'00_istoriya_motion.rpy'),GENERATED_NOTICE+motionWarperScript,'utf8');
   for (const scene of Object.values(project.scenes)) {
     if (!scene.background && !scene.backgroundResourceId) continue;
     const linked = assetMap.get(scene.backgroundResourceId) ?? assetBySource.get(scene.background);

@@ -2,14 +2,17 @@ import {useState} from 'react';
 import {Plus,Trash} from '@phosphor-icons/react';
 import {conditionProblems,effectProblems,effectKind} from '../../runtime/game-logic.mjs';
 import './rule-fields.css';
+import {rpgStats} from '../../runtime/rpg-model.mjs';
+import {RpgStatFields} from './RpgActionFields.jsx';
+const statOperationLabels=new Map([['add','прибавить'],['subtract','вычесть'],['set','установить']]);
 const numeric=type=>['number','relationship'].includes(type);
 const valueFor=type=>numeric(type)?0:type==='boolean'?false:'';
-const refs=project=>[...(project.flags??[]).map(v=>({...v,kind:'flag',type:'boolean'})),...(project.variables??[]).map(v=>({...v,kind:'variable'})),...(project.items??[]).map(v=>({...v,kind:'item',type:'number'}))];
-function clauseFor(ref){return ref?{[{flag:'flagId',variable:'variableId',item:'itemId'}[ref.kind]]:ref.id,operator:ref.kind==='item'?'gte':'eq',value:ref.kind==='item'?1:valueFor(ref.type)}:null;}
+const refs=project=>[...rpgStats(project).map(v=>({...v,kind:'stat',type:'number'})),...(project.flags??[]).map(v=>({...v,kind:'flag',type:'boolean'})),...(project.variables??[]).map(v=>({...v,kind:'variable'})),...(project.items??[]).map(v=>({...v,kind:'item',type:'number'}))];
+function clauseFor(ref){return ref?{[{stat:'statId',flag:'flagId',variable:'variableId',item:'itemId'}[ref.kind]]:ref.id,operator:ref.kind==='item'?'gte':'eq',value:ref.kind==='item'?1:valueFor(ref.type)}:null;}
 function conditionSummary(value,project){
  if(!value)return 'Не задано';
  if(value.kind==='all'||value.kind==='any')return `${value.negate?'Не: ':''}${value.kind==='all'?'Все':'Любое'} из ${value.conditions?.length??0} условий`;
- const reference=refs(project).find(r=>r.kind===(value.flagId?'flag':value.itemId?'item':'variable')&&r.id===(value.flagId??value.itemId??value.variableId));
+ const reference=refs(project).find(r=>r.kind===(value.statId?'stat':value.flagId?'flag':value.itemId?'item':'variable')&&r.id===(value.statId??value.flagId??value.itemId??value.variableId));
  const comparison={eq:'равно',neq:'не равно',gt:'больше',gte:'не меньше',lt:'меньше',lte:'не больше',contains:'содержит'}[value.operator??(value.itemId?'gte':'eq')];
  const display=reference?.type==='boolean'?(value.value===true||value.value==='true'?'да':'нет'):String(value.value??'');
  return `${value.negate?'Не: ':''}${reference?.name??'Выберите значение'} ${comparison??'—'} ${display}`;
@@ -22,7 +25,7 @@ export function VariableActionFields({project,action,onChange}){
 export function ConditionEditor({project,value,onChange,label='Условия',depth=0}){
  const [expanded,setExpanded]=useState(null);
  const references=refs(project),first=clauseFor(references[0]),group=value?.kind==='all'||value?.kind==='any';
- const kind=value?.flagId?'flag':value?.itemId?'item':'variable',id=value?.flagId??value?.itemId??value?.variableId,reference=references.find(r=>r.kind===kind&&r.id===id);
+ const kind=value?.statId?'stat':value?.flagId?'flag':value?.itemId?'item':'variable',id=value?.statId??value?.flagId??value?.itemId??value?.variableId,reference=references.find(r=>r.kind===kind&&r.id===id);
  const problems=depth===0?conditionProblems(value,project):[];
  const add=()=>{setExpanded(group?value.conditions.length:value?1:null);onChange(value?group?{...value,conditions:[...value.conditions,first]}:{kind:'all',conditions:[value,first]}:first);};
  return <fieldset className="rule-editor condition-editor" aria-label={label}><legend>{label}</legend>
@@ -31,7 +34,7 @@ export function ConditionEditor({project,value,onChange,label='Условия',d
    <label className="rule-checkbox"><input type="checkbox" checked={!!value.negate} onChange={e=>onChange({...value,negate:e.target.checked})}/>Обратить результат группы</label>
    {(value.conditions??[]).map((child,index)=><details className="rule-clause" key={index} open={expanded===index}><summary onClick={event=>{event.preventDefault();setExpanded(previous=>previous===index?null:index);}}>{conditionSummary(child,project)}</summary><ConditionEditor project={project} value={child} label={`Условие ${index+1}`} depth={depth+1} onChange={next=>{if(!next)setExpanded(null);onChange({...value,conditions:next?value.conditions.map((c,i)=>i===index?next:c):value.conditions.filter((_,i)=>i!==index)});}}/></details>)}
   </>:<>
-   <label className="field"><span>Что проверить</span><select value={`${kind}:${id??''}`} onChange={e=>{const colon=e.target.value.indexOf(':'),r=references.find(r=>r.kind===e.target.value.slice(0,colon)&&r.id===e.target.value.slice(colon+1));onChange({...clauseFor(r),negate:!!value.negate});}}>{!reference&&<option value={`${kind}:${id??''}`}>Выберите существующее значение</option>}{[['flag','Флаги'],['variable','Переменные'],['item','Инвентарь']].map(([k,name])=><optgroup key={k} label={name}>{references.filter(r=>r.kind===k).map(r=><option key={r.id} value={`${r.kind}:${r.id}`}>{r.name}</option>)}</optgroup>)}</select></label>
+   <label className="field"><span>Что проверить</span><select value={`${kind}:${id??''}`} onChange={e=>{const colon=e.target.value.indexOf(':'),r=references.find(r=>r.kind===e.target.value.slice(0,colon)&&r.id===e.target.value.slice(colon+1));onChange({...clauseFor(r),negate:!!value.negate});}}>{!reference&&<option value={`${kind}:${id??''}`}>Выберите существующее значение</option>}{[['stat','Игровые показатели'],['flag','Флаги'],['variable','Переменные'],['item','Инвентарь']].map(([k,name])=><optgroup key={k} label={name}>{references.filter(r=>r.kind===k).map(r=><option key={r.id} value={`${r.kind}:${r.id}`}>{r.name}</option>)}</optgroup>)}</select></label>
    <label className="field"><span>Сравнение</span><select value={value.operator??(kind==='item'?'gte':'eq')} onChange={e=>onChange({...value,operator:e.target.value})}>{[['eq','Равно'],['neq','Не равно'],...(numeric(reference?.type)?[['gt','Больше'],['gte','Не меньше'],['lt','Меньше'],['lte','Не больше']]:reference?.type==='text'?[['contains','Содержит текст']]:[])].map(([op,name])=><option value={op} key={op}>{name}</option>)}</select></label>
    <ValueField label={kind==='item'?'Количество предмета':'Значение условия'} type={reference?.type??'text'} value={value.value} onChange={next=>onChange({...value,value:next})}/>
    <label className="rule-checkbox"><input type="checkbox" checked={!!value.negate} onChange={e=>onChange({...value,negate:e.target.checked})}/>Обратить это условие</label>
@@ -47,7 +50,7 @@ export function EffectsEditor({project,value=[],onChange,label='Результа
  const make=kind=>kind==='flag'?{kind,flagId:flags[0]?.id??'',value:true}:kind==='inventory'?{kind,itemId:items[0]?.id??'',operation:'add',quantity:1}:{kind:'variable',variableId:variables[0]?.id??'',operation:'set',value:valueFor(variables[0]?.type)};
  const update=(index,patch)=>onChange(value.map((effect,i)=>i===index?{...effect,...patch}:effect));
  return <fieldset className="rule-editor effects-editor" aria-label={label}><legend>{label}</legend>{!value.length&&<p className="rule-empty">Дополнительных изменений нет.</p>}
-  {value.map((effect,index)=>{const kind=effectKind(effect),definition=(kind==='flag'?flags:kind==='inventory'?items:variables).find(v=>v.id===(kind==='flag'?effect.flagId:kind==='inventory'?effect.itemId:effect.variableId)),problems=effectProblems(effect,project);
+  {value.map((effect,index)=>{const kind=effectKind(effect);if(kind==='stat')return <details className="rule-effect" key={effect.id??index} open={expanded===index}><summary onClick={event=>{event.preventDefault();setExpanded(previous=>previous===index?null:index);}}>{rpgStats(project).find(s=>s.id===effect.statId)?.name??'Игровой показатель'}: {statOperationLabels.get(effect.operation)??'выберите операцию'} {effect.value}</summary><RpgStatFields project={project} value={effect} onChange={patch=>update(index,patch)}/><button type="button" onClick={()=>onChange(value.filter((_,i)=>i!==index))}>Удалить результат</button></details>;const definition=(kind==='flag'?flags:kind==='inventory'?items:variables).find(v=>v.id===(kind==='flag'?effect.flagId:kind==='inventory'?effect.itemId:effect.variableId)),problems=effectProblems(effect,project);
    const summary=kind==='inventory'?`${definition?.name??'Предмет'}: ${effect.operation==='remove'?'забрать':'добавить'} ${effect.quantity??1}`:`${definition?.name??'Значение'}: ${kind==='variable'&&effect.operation==='add'?'прибавить ':kind==='variable'&&effect.operation==='subtract'?'вычесть ':''}${kind==='flag'||definition?.type==='boolean'?(effect.value===true||effect.value==='true'?'да':'нет'):effect.value??''}`;
    return <details className="rule-effect" key={effect.id??index} open={expanded===index}><summary onClick={event=>{event.preventDefault();setExpanded(previous=>previous===index?null:index);}}>{summary}</summary><div role="group" aria-label={`Результат ${index+1}`}>
     <label className="field"><span>Вид результата</span><select value={kind} onChange={e=>onChange(value.map((old,i)=>i===index?{...(old.id?{id:old.id}:{}),...make(e.target.value)}:old))}><option value="flag">Изменить флаг</option><option value="variable">Изменить переменную</option><option value="inventory">Изменить инвентарь</option></select></label>
@@ -61,6 +64,7 @@ export function EffectsEditor({project,value=[],onChange,label='Результа
    </div></details>;
   })}
   <button type="button" className="rule-add-result" disabled={!flags.length&&!variables.length&&!items.length} onClick={()=>{setExpanded(value.length);onChange([...value,make(flags.length?'flag':variables.length?'variable':'inventory')]);}}><Plus/>Добавить результат</button>
+  {rpgStats(project).some(s=>!s.readOnly)&&<button type="button" className="rule-add-result" onClick={()=>{setExpanded(value.length);onChange([...value,{kind:'stat',statId:'health',operation:'add',value:10}]);}}>Изменить игровой показатель</button>}
   {!flags.length&&!variables.length&&!items.length&&<p className="rule-empty">Создайте переменную, флаг или предмет в разделе «Сюжет».</p>}
  </fieldset>;
 }

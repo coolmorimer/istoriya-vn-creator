@@ -7,7 +7,9 @@ export function propImagePoint(layer,frame,imageWidth,imageHeight,clientX,client
  return pixelX>=0&&pixelX<imageWidth&&pixelY>=0&&pixelY<imageHeight?{x:Math.floor(pixelX),y:Math.floor(pixelY)}:null;
 }
 const masks=new WeakMap();
-export function opaquePropHit(image,layer,event,frame) {
+import {cameraPoint} from '../../runtime/keyframes.mjs';
+export function opaquePropHit(image,layer,event,frame,camera) {
+ if(camera){const p=cameraPoint(camera,frame,event.clientX-frame.left,event.clientY-frame.top,true);event={clientX:p.x+frame.left,clientY:p.y+frame.top};}
  const point=propImagePoint(layer,frame,image.naturalWidth,image.naturalHeight,event.clientX,event.clientY);if(!point)return false;
  try {
   let mask=masks.get(image);

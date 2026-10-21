@@ -1,11 +1,13 @@
 import { defaultProject, createId } from "../data/defaultProject.js";
 import {defaultGameUi} from '../../runtime/game-ui.mjs';
+import {defaultRpg} from '../../runtime/rpg-model.mjs';
 
 export function createProject(configuration = {}) {
   const options = typeof configuration === "string" ? { template: configuration } : configuration;
   const template = options.template ?? "empty";
   const project = structuredClone(defaultProject);
   project.id = createId("project");
+  project.rpg=defaultRpg();
   const now = new Date().toISOString();
   Object.assign(project.meta, { title: options.title?.trim() || (template === "tutorial" ? "Учебная история" : "Новая история"), author: options.author?.trim() || "", description: "", icon: options.icon ?? null, createdAt: now, modifiedAt: now, projectFolder: options.projectFolder ?? null });
   project.meta.android.packageName = `com.istoriya.p${project.id.split("_").at(-1)}`;

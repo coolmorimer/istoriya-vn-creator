@@ -17,7 +17,7 @@ export function shownCharacterLayer(scene, action, index, previous) {
     x:action.x??({left:25,center:50,right:75})[action.position]??50,y:action.y??100,
     scale:action.scale??100,rotation:action.rotation??0,opacity:action.opacity??100,flip:action.flip??false,
     zOrder,_stackOrder:previous && previous.zOrder===zOrder ? previous._stackOrder : (scene.characters?.length??0)+(scene.images?.length??0)+index+1,
-    sourceActionId:action.id,transformActionId:action.id,spriteActionId:action.id,animationScaleMultiplier:1,
+    sourceActionId:action.id,transformActionId:action.id,spriteActionId:action.id,animationScaleMultiplier:1,motionActionId:null,
   };
 }
 export function compareVisualLayers(a,b) {

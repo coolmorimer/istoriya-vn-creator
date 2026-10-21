@@ -10,7 +10,7 @@ import { resolveCharacterSprite } from "../runtime/character-sprites.mjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AndroidLogo, AppleLogo, ArrowClockwise, ArrowCounterClockwise, ArrowDown, ArrowUp, ArrowsOut, BookOpenText, CaretDown,
-  CaretRight, Check, CheckCircle, ClockCountdown, CursorClick, Desktop,
+  CaretRight, Check, CheckCircle, ClockCountdown, CursorClick, Desktop,Camera,
   DownloadSimple, Eye, FilmSlate, FloppyDisk, FolderOpen, FolderSimple, GearSix,
   GitBranch, GlobeHemisphereWest, House, ImageSquare, LinuxLogo, ListDashes, MagnifyingGlass, MapTrifold, Minus,
   Monitor, MusicNotes, Package, Palette, Play, Plus, SpeakerHigh, TextT, Trash,
@@ -35,6 +35,9 @@ import {ConditionEditor,EffectsEditor,VariableActionFields} from './components/R
 import {InventoryWorkspace} from './components/InventoryWorkspace.jsx';
 import {ChoiceFields} from './components/ChoiceFields.jsx';
 import {PreviewGameplay} from './components/PreviewGameplay.jsx';
+import {RpgGameplay} from './components/RpgGameplay.jsx';
+import {RpgWorkspace} from './components/RpgWorkspace.jsx';
+import {RpgActionFields} from './components/RpgActionFields.jsx';
 import {opaquePropHit} from './domain/propHitTest.js';
 import {PreviewActor} from './components/PreviewActor.jsx';
 import {BackgroundPicker} from './components/BackgroundPicker.jsx';
@@ -54,6 +57,7 @@ import {GameDialogue,GameChoices,GameQuick} from './components/GameUiView.jsx';
 import { StoryboardEditor } from './components/StoryboardEditor.jsx';
 import { storyboardFrames } from './domain/storyboard.js';
 import { WorkspaceLayout } from './components/WorkspaceLayout.jsx';
+import {DockPanel} from './components/DockPanel.jsx';
 import { VisualLayers } from './components/VisualLayers.jsx';
 import { visualLayerEdits } from './domain/visualLayers.js';
 import { backgroundTransform, backgroundStyle, backgroundSource } from '../runtime/background-transform.mjs';
@@ -61,6 +65,9 @@ import { BackgroundFields } from './components/BackgroundFields.jsx';
 import {ImageLayerFields} from './components/ImageLayerFields.jsx';
 import {sceneImages,imageLayerStyle} from '../runtime/image-layers.mjs';
 import {sceneCharacterLayers,scenePaintOrder} from '../runtime/visual-order.mjs';
+import {cameraStyle,cameraPoint,motionDuration} from '../runtime/keyframes.mjs';
+import {useMotionFrame} from './components/useMotionFrame.js';
+import {KeyframeFields,editKeyPose} from './components/KeyframeFields.jsx';
 
 const navItems = [
   { id: "project", label: "Проект", icon: House },
@@ -79,6 +86,8 @@ const resourceCategories = [
 ];
 
 const actionTypes = [
+  ['keyframes','Камера и ключевые кадры'],
+  ['rpg','Игровое действие'],
   ["dialogue", "Диалог"], ["narration", "Текст автора"], ["choice", "Выбор игрока"],
   ['explore','Осмотреть сцену'],
   ["showCharacter", "Показать персонажа"], ["hideCharacter", "Скрыть персонажа"], ["changeSprite", "Изменить спрайт"], ["moveCharacter", "Переместить персонажа"], ["characterAnimation", "Анимация персонажа"], ["background", "Изменить фон"], ["showCG", "Показать CG"], ["hideCG", "Скрыть CG"],
@@ -249,7 +258,7 @@ function CanvasToolbar({ onAddCharacter,onAddImage,onPickBackground,hasBackgroun
     <div className="canvas-toolbar">
       <strong title={`Сцена ${scene.number} — ${scene.title}`}>Сцена {scene.number} — {scene.title}</strong>
       <CanvasViewControls navigation={navigation} selectedBounds={selectedBounds} onFocus={onFocus} clipPreview={clipPreview} onToggleClip={onToggleClip}/>
-      <div className="canvas-object-tools"><button className="canvas-add-character" aria-label="Добавить персонажа" title="Добавить персонажа в текущий кадр" onClick={onAddCharacter}><User />Персонаж</button><button className="canvas-mode-button" onClick={onPickBackground}><ImageSquare/>Фон…</button><button className="canvas-mode-button" onClick={onAddImage}>Предмет</button>{hasBackground&&<button className={`canvas-mode-button ${editBackground?"active":""}`} aria-pressed={editBackground} onClick={onToggleBackground}>Двигать фон</button>}<span className="canvas-resolution">{project.meta.resolution.width} × {project.meta.resolution.height}</span></div>
+      <div className="canvas-object-tools"><button className="canvas-add-character" aria-label="Добавить персонажа" title="Добавить персонажа в текущий кадр" onClick={onAddCharacter}><User />Персонаж</button><button className="canvas-mode-button" onClick={onPickBackground}><ImageSquare/>Фон…</button><button className="canvas-mode-button" onClick={onAddImage}>Предмет</button><button className="canvas-mode-button" aria-label="Камера / движение" title="Камера и ключевые кадры" onClick={()=>useProjectStore.getState().addAction('keyframes',{afterId:useProjectStore.getState().activeActionId})}><Camera/>Камера</button>{hasBackground&&<button className={`canvas-mode-button ${editBackground?"active":""}`} aria-pressed={editBackground} onClick={onToggleBackground}>Двигать фон</button>}<span className="canvas-resolution">{project.meta.resolution.width} × {project.meta.resolution.height}</span></div>
     </div>
   );
 }
@@ -274,9 +283,11 @@ function DialogueOverlay({ scene, frame, canvasWidth }) {
 function SceneCanvas({ onBackgroundPick }) {
   const { project, activeSceneId, activeLayerId, selectVisualLayer, updateSceneCharacter,updateSceneImage, bottomTab, timelineTime, addAction, updateAction, updateScene,activeActionId } = useProjectStore();
   const scene = project.scenes[activeSceneId];
-  const frames=useMemo(()=>!scene.timelineEnabled?storyboardFrames(project,scene):[],[project,scene]);
+  const motionTime=useProjectStore(s=>s.motionTime);
+  const frames=useMemo(()=>!scene.timelineEnabled?storyboardFrames(project,scene,motionTime==null?undefined:{actionId:activeActionId,time:motionTime}):[],[project,scene,activeActionId,motionTime]);
   const frame = bottomTab === "timeline" ? timelineFrame(project, scene, timelineTime) : frames.find(f=>f.action.id===activeActionId)?.frame??null;
-  const characters=frame?.layers??sceneCharacterLayers(scene),images=sceneImages(scene);
+  const characters=frame?.layers??sceneCharacterLayers(scene),images=frame?.images??sceneImages(scene);
+  const motionAction=scene.actions.find(a=>a.id===activeActionId&&a.type==='keyframes'),isMotionLayer=layer=>motionAction?.target.id&&(motionAction.target.id===layer.id||motionAction.target.id===layer.characterId);
   const paintOrder=scenePaintOrder(scene,characters,images,frame?.backgroundActionId);
   const [contextMenu,setContextMenu] = useState(null);
   const [showCharacters,setShowCharacters] = useState(false);
@@ -300,49 +311,54 @@ function SceneCanvas({ onBackgroundPick }) {
     if (layer.locked || event.button !== 0) return;
     if(gesture.current){event.preventDefault();event.stopPropagation();return;}
     event.preventDefault(); event.stopPropagation();
-    if(layer.id!=='__background')selectVisualLayer(layer.id);
+    const currentMotion=scene.actions.find(a=>a.id===activeActionId&&a.type==='keyframes');
+    if(layer.id!=='__background'&&!(currentMotion&&(currentMotion.target.id===layer.id||currentMotion.target.id===layer.characterId)))selectVisualLayer(layer.id);
     const rect = event.currentTarget.closest(".game-canvas").getBoundingClientRect();
     const anchorX = rect.left + layer.x / 100 * rect.width;
     const anchorY = rect.top + layer.y / 100 * rect.height;
+    const world=cameraPoint(frame?.camera,rect,event.clientX-rect.left,event.clientY-rect.top,true);
     gesture.current = {mode, layerId:layer.id,pointerId:event.pointerId,element:event.currentTarget,projectId:project.id,sceneId:scene.id,actionId:activeActionId,x:layer.x, y:layer.y, scale:layer.scale ?? 100,
-      clientX:event.clientX, clientY:event.clientY, width:rect.width, height:rect.height,
-      anchorX, anchorY, distance:Math.hypot(event.clientX-anchorX,event.clientY-anchorY)};
+      clientX:world.x+rect.left, clientY:world.y+rect.top, width:rect.width, height:rect.height,rect,
+      anchorX, anchorY, distance:Math.hypot(world.x+rect.left-anchorX,world.y+rect.top-anchorY)};
     event.currentTarget.setPointerCapture(event.pointerId);
     setDrag({...layer, layerId:layer.id});
   };
   const moveDrag = (event, layer) => {
     if (gesture.current?.layerId !== layer.id||gesture.current.pointerId!==event.pointerId) return;
-    setDrag({...layer, layerId:layer.id, ...canvasTransform(gesture.current,event.clientX,event.clientY)});
+    const r=gesture.current.rect,p=cameraPoint(frame?.camera,r,event.clientX-r.left,event.clientY-r.top,true);
+    setDrag({...layer, layerId:layer.id, ...canvasTransform(gesture.current,p.x+r.left,p.y+r.top)});
   };
   const finishDrag = (event, layer) => {
     if (gesture.current?.layerId !== layer.id||gesture.current.pointerId!==event.pointerId) return;
     if(gesture.current.projectId!==project.id||gesture.current.sceneId!==scene.id||gesture.current.actionId!==activeActionId){cancelLayerDrag();return;}
-    const patch = canvasTransform(gesture.current,event.clientX,event.clientY);
-    if(layer.id==='__background')updateBackground(patch);
-    else if(layer.kind==='image')updateSceneImage(scene.id,layer.id,patch);
+    const r=gesture.current.rect,p=cameraPoint(frame?.camera,r,event.clientX-r.left,event.clientY-r.top,true),patch = canvasTransform(gesture.current,p.x+r.left,p.y+r.top);
+    const motion=scene.actions.find(a=>a.id===activeActionId&&a.type==='keyframes'),target=motion?.target;
+    if(motion&&((target.kind==='image'&&target.id===layer.id)||(target.kind==='character'&&target.id===layer.characterId)||(target.kind==='background'&&layer.id==='__background')))updateAction(scene.id,motion.id,{keyframes:editKeyPose(motion,motionTime??motionDuration(motion),patch)});
+    else if(layer.id==='__background'){if(frame?.backgroundMotionId)updateAction(scene.id,frame.backgroundMotionId,patch);else updateBackground(patch);}
+    else if(layer.kind==='image'){if(layer.motionActionId)updateAction(scene.id,layer.motionActionId,patch);else updateSceneImage(scene.id,layer.id,patch);}
     else for(const edit of visualLayerEdits(layer,patch)){if(edit.actionId)updateAction(scene.id,edit.actionId,edit.patch);else updateSceneCharacter(scene.id,layer.id,edit.patch);}
     gesture.current=null; setDrag(null);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
   return (
     <section className="scene-stage" data-editor-location={JSON.stringify(['scene',scene.id])}><CanvasToolbar onAddCharacter={() => setShowCharacters(true)} onAddImage={()=>setShowProps(true)} onPickBackground={onBackgroundPick} hasBackground={!!(frame?frame.background:backgroundSource(project,scene))} editBackground={editBackground} onToggleBackground={()=>{setEditBackground(!editBackground);selectVisualLayer("__background");}} clipPreview={clipPreview} onToggleClip={()=>setClipPreview(!clipPreview)} navigation={navigation} selectedBounds={selectedBounds} onFocus={()=>{setClipPreview(false);navigation.focus(selectedBounds);}} /><div className={`canvas-viewport ${navigation.canPan?"can-pan":""} ${navigation.panning?"is-panning":""}`} ref={viewport} role="region" aria-label="Холст сцены" tabIndex={0} {...navigation.bind}><div className="scene-pasteboard" style={{left:navigation.view.x,top:navigation.view.y}}><div className={`game-canvas ${clipPreview?"clip-preview":""}`} onContextMenu={e => {e.preventDefault();setContextMenu({x:e.clientX,y:e.clientY});}} style={{ width: canvasWidth, aspectRatio: `${project.meta.resolution.width} / ${project.meta.resolution.height}` }}>
-      <div className="visual-scene-objects">
+      <div className="visual-scene-objects" style={cameraStyle(frame?.camera,navigation.view.scale)}>
       <div className="scene-background-clip" style={{zIndex:paintOrder.background}}>{(frame ? frame.background : backgroundSource(project,scene)) && <img className="scene-background" style={backgroundStyle(bgTransform)} src={frame ? frame.background : backgroundSource(project,scene)} alt={`Фон сцены ${scene.title}`} />}</div>
       {characters.map((layer) => {
         const character = project.characters.find((item) => item.id === layer.characterId);
         const { source, sprite } = resolveCharacterSprite(character, layer.spriteId, project.resources);
-        const selected = activeLayerId === layer.id || (layer.sourceActionId && activeActionId === layer.sourceActionId);
+        const selected = activeLayerId === layer.id || isMotionLayer(layer) || (layer.sourceActionId && activeActionId === layer.sourceActionId);
         const position = layerPosition(layer);
         if (!layer.visible) return null;
         return <button key={layer.id} className={`scene-character-layer ${selected ? "selected" : ""} ${layer.locked ? "locked" : ""}`} style={{ left: `${position.x}%`, top: `${position.y}%`, opacity: layer.opacity / 100,zIndex:paintOrder.characters.get(layer.characterId), transform: `translate(-50%, -100%) rotate(${layer.rotation}deg) scale(${layer.flip ? -position.scale / 100 : position.scale / 100}, ${position.scale / 100})` }} onPointerDown={(event) => beginDrag(event, layer)} onPointerMove={(event) => moveDrag(event, layer)} onPointerUp={(event) => finishDrag(event, layer)} onPointerCancel={cancelOwnedDrag} onLostPointerCapture={cancelOwnedDrag}>
-          {source ? <img src={source} alt={`${character?.name ?? "Персонаж"} — ${sprite?.name ?? "портрет"}`} draggable="false" /> : <span className="character-placeholder"><User weight="duotone" /><strong>{character?.name ?? "Персонаж"}</strong><small>Добавьте PNG-спрайт</small></span>}
+          {source ? <img src={source} style={{filter:`blur(calc(${layer.blur??0}px * var(--scene-pixel, 1)))`}} alt={`${character?.name ?? "Персонаж"} — ${sprite?.name ?? "портрет"}`} draggable="false" /> : <span className="character-placeholder"><User weight="duotone" /><strong>{character?.name ?? "Персонаж"}</strong><small>Добавьте PNG-спрайт</small></span>}
           {selected && !layer.locked && <><span className="sprite-size-badge">{Math.round(project.meta.resolution.width * .34 * position.scale / 100)} × {Math.round(project.meta.resolution.height * .88 * position.scale / 100)} · {position.scale}%</span>{["nw","ne","sw","se"].map(corner => <span key={corner} className={"sprite-resize-handle " + corner} title="Потяните, чтобы изменить размер" onPointerDown={event => beginDrag(event,layer,"resize")} />)}</>}
         </button>;
       })}
-      {images.filter(layer=>layer.visible).map(layer=>{const resource=project.resources.find(r=>r.id===layer.resourceId),position=layerPosition(layer);return <button key={layer.id} aria-label={`Слой: ${layer.name}`} className={`scene-image-layer ${activeLayerId===layer.id?'selected':''} ${layer.locked?'locked':''}`} style={{...imageLayerStyle(position),zIndex:paintOrder.images.get(layer.id)}} onPointerDown={event=>beginDrag(event,layer)} onPointerMove={event=>moveDrag(event,layer)} onPointerUp={event=>finishDrag(event,layer)} onPointerCancel={cancelOwnedDrag} onLostPointerCapture={cancelOwnedDrag}>{resource?.source&&<img src={resource.source} alt={layer.name} draggable="false"/>}{activeLayerId===layer.id&&!layer.locked&&['nw','ne','sw','se'].map(corner=><span key={corner} className={'sprite-resize-handle '+corner} onPointerDown={event=>beginDrag(event,layer,'resize')}/>)}</button>;})}
+      {images.filter(layer=>layer.visible).map(layer=>{const resource=project.resources.find(r=>r.id===layer.resourceId),position=layerPosition(layer),selected=activeLayerId===layer.id||isMotionLayer(layer);return <button key={layer.id} aria-label={`Слой: ${layer.name}`} className={`scene-image-layer ${selected?'selected':''} ${layer.locked?'locked':''}`} style={{...imageLayerStyle(position),filter:'none',zIndex:paintOrder.images.get(layer.id)}} onPointerDown={event=>beginDrag(event,layer)} onPointerMove={event=>moveDrag(event,layer)} onPointerUp={event=>finishDrag(event,layer)} onPointerCancel={cancelOwnedDrag} onLostPointerCapture={cancelOwnedDrag}>{resource?.source&&<img src={resource.source} alt={layer.name} draggable="false"/>}{selected&&!layer.locked&&['nw','ne','sw','se'].map(corner=><span key={corner} className={'sprite-resize-handle '+corner} onPointerDown={event=>beginDrag(event,layer,'resize')}/>)}</button>;})}
       </div>
       {!(frame ? frame.background : backgroundSource(project,scene)) && !characters.some(l=>l.visible)&&!images.some(l=>l.visible)&&<div className="empty-canvas"><ImageSquare size={42}/><span>Добавьте фон и персонажей</span></div>}
-      {editBackground && <div className="background-edit-outline" style={backgroundStyle(bgTransform)} onPointerDown={event=>beginDrag(event,{...bgTransform,id:"__background"})} onPointerMove={event=>moveDrag(event,{...bgTransform,id:"__background"})} onPointerUp={event=>finishDrag(event,{...bgTransform,id:"__background"})} onPointerCancel={cancelOwnedDrag} onLostPointerCapture={cancelOwnedDrag}><span>Фон · {Math.round(bgTransform.scale)}%</span>{["nw","ne","sw","se"].map(corner=><span key={corner} className={"sprite-resize-handle "+corner} onPointerDown={event=>beginDrag(event,{...bgTransform,id:"__background"},"resize")}/>)}</div>}
+      {editBackground && <div className="background-motion-outline" style={cameraStyle(frame?.camera,navigation.view.scale)}><div className="background-edit-outline" style={{...backgroundStyle(bgTransform),opacity:1,filter:'none'}} onPointerDown={event=>beginDrag(event,{...bgTransform,id:"__background"})} onPointerMove={event=>moveDrag(event,{...bgTransform,id:"__background"})} onPointerUp={event=>finishDrag(event,{...bgTransform,id:"__background"})} onPointerCancel={cancelOwnedDrag} onLostPointerCapture={cancelOwnedDrag}><span>Фон · {Math.round(bgTransform.scale)}%</span>{["nw","ne","sw","se"].map(corner=><span key={corner} className={"sprite-resize-handle "+corner} onPointerDown={event=>beginDrag(event,{...bgTransform,id:"__background"},"resize")}/>)}</div></div>}
       {project.editor?.showGuides && <><span className="canvas-guide vertical" /><span className="canvas-guide horizontal" /></>}
       {frame?.cg && <img className="timeline-cg-preview" src={frame.cg} alt="Иллюстрация" />}<DialogueOverlay scene={scene} frame={frame} canvasWidth={canvasWidth} />{frame?.choice && <div className="timeline-choice-preview">{frame.choice.options.map(o=><span key={o.id}>{o.text}</span>)}</div>}<button className="replace-background" onClick={onBackgroundPick}><ImageSquare />Заменить фон</button>
     </div></div></div>{contextMenu && <EditorContextMenu position={contextMenu} items={sceneMenuItems({addCharacter:()=>setShowCharacters(true),addProp:()=>setShowProps(true),background:onBackgroundPick,action:type=>addAction(type,{afterId:activeActionId})})} onClose={()=>setContextMenu(null)}/>} {showCharacters && <CharacterPicker sceneId={scene.id} onClose={()=>setShowCharacters(false)} onAdded={scene.timelineEnabled?undefined:characterId=>addAction('showCharacter',{afterId:activeActionId,values:{characterId}})}/>} {showProps&&<PropPicker key={`${project.id}:${scene.id}`} sceneId={scene.id} onClose={()=>setShowProps(false)}/>}</section>
@@ -350,6 +366,7 @@ function SceneCanvas({ onBackgroundPick }) {
 }
 
 function ActionIcon({ type }) {
+  if(type==='keyframes')return <Camera/>;
   if (["background", "showCG", "hideCG"].includes(type)) return <ImageSquare />;
   if (type === "choice") return <GitBranch />;
   if (["music", "stopMusic"].includes(type)) return <MusicNotes />;
@@ -379,6 +396,7 @@ function Field({ label, children, className = "" }) { return <label className={`
 
 function ActionFields({ action, scene }) {
   if(!action)return null;
+  if(action.type==='keyframes')return <KeyframeFields key={action.id} action={action} scene={scene}/>;
   return <div data-editor-location={JSON.stringify(['action',action.id])}><ActionSpecificFields action={action} scene={scene}/>{!['music','stopMusic','stopAudio','sound','voice','ambience'].includes(action.type)&&<ActionAudioFields action={action} scene={scene}/>}</div>;
 }
 function ActionSpecificFields({ action, scene }) {
@@ -391,6 +409,7 @@ function ActionSpecificFields({ action, scene }) {
     return <><Field label="Персонаж"><select value={action.speakerId ?? ""} onChange={(event) => patch({ speakerId: event.target.value, spriteId: null })}>{project.characters.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></Field><Field label="Спрайт"><select value={action.spriteId ?? ""} onChange={(event) => patch({ spriteId: event.target.value || null })}><option value="">Основной</option>{character?.sprites.map((sprite) => <option value={sprite.id} key={sprite.id}>{sprite.name}</option>)}</select></Field><AudioResourceField label="Озвучка реплики" category="voice" value={action.voiceAssetId} target={{kind:'action',sceneId:scene.id,actionId:action.id}} field="voiceAssetId" volume={action.voiceVolume} onVolumeChange={voiceVolume=>patch({voiceVolume})}/><Field label="Текст"><textarea rows="5" value={action.text} onChange={(event) => patch({ text: event.target.value })} /></Field><TextAppearance action={action} onChange={patch}/></>;
   }
   if (action.type === "narration") return <><Field label="Текст автора"><textarea rows="6" value={action.text} onChange={(event) => patch({ text: event.target.value })} /></Field><AudioResourceField label="Озвучка реплики" category="voice" value={action.voiceAssetId} target={{kind:'action',sceneId:scene.id,actionId:action.id}} field="voiceAssetId" volume={action.voiceVolume} onVolumeChange={voiceVolume=>patch({voiceVolume})}/><TextAppearance action={action} onChange={patch}/></>;
+  if(action.type==='rpg')return <RpgActionFields project={project} action={action} onChange={patch}/>;
   if(action.type==='explore')return <ExplorationFields action={action} scene={scene}/>;
   if (action.type === "pause") return <Field label="Длительность паузы, сек"><input type="number" min=".1" step=".1" value={action.duration??1} onChange={e=>patch({duration:Math.max(.1,Number(e.target.value)||1)})}/></Field>;
   if (action.type === "choice") {
@@ -426,8 +445,8 @@ function Inspector() {
   const snapshots = !scene.timelineEnabled ? storyboardFrames(project,scene) : [];
   const visualFrame = bottomTab === 'timeline' ? timelineFrame(project,scene,timelineTime) : snapshots.find(item=>item.action.id===activeActionId)?.frame;
   const characters = visualFrame?.layers ?? sceneCharacterLayers(scene);
-  const images=sceneImages(scene),selectedImage=images.find(layer=>layer.id===activeLayerId);
-  const updateSceneCharacter = (sceneId,layerId,patch) => {if(images.some(layer=>layer.id===layerId)){updateSceneImage(sceneId,layerId,patch);return;} const item=characters.find(layer=>layer.id===layerId);for(const edit of visualLayerEdits(item??{},patch)){if(edit.actionId)updateAction(sceneId,edit.actionId,edit.patch);else updateBaseLayer(sceneId,layerId,edit.patch);}};
+  const images=visualFrame?.images??sceneImages(scene),selectedImage=images.find(layer=>layer.id===activeLayerId);
+  const updateSceneCharacter = (sceneId,layerId,patch) => {const image=images.find(layer=>layer.id===layerId);if(image){if(image.motionActionId&&Object.keys(patch).every(k=>['x','y','scale','rotation','opacity'].includes(k)))updateAction(sceneId,image.motionActionId,patch);else updateSceneImage(sceneId,layerId,patch);return;} const item=characters.find(layer=>layer.id===layerId);for(const edit of visualLayerEdits(item??{},patch)){if(edit.actionId)updateAction(sceneId,edit.actionId,edit.patch);else updateBaseLayer(sceneId,layerId,edit.patch);}};
   const layer = characters.find((item) => item.id === activeLayerId) ?? (!action && !activeLayerId ? characters[0] : null);
   const character = project.characters.find((item) => item.id === layer?.characterId);
   const appearanceAction=scene.actions.find(item=>item.id===layer?.sourceActionId&&item.type==='showCharacter');
@@ -436,6 +455,7 @@ function Inspector() {
     <aside className="inspector">
       <div className="inspector-tabs"><button className={inspectorTab === "properties" ? "active" : ""} onClick={() => setInspectorTab("properties")}>Свойства</button><button className={inspectorTab === "resources" ? "active" : ""} onClick={() => setInspectorTab("resources")}>Сцена</button><button className={inspectorTab === "effects" ? "active" : ""} onClick={() => setInspectorTab("effects")}>Слои</button></div>
       {inspectorTab === "properties" && <div className="inspector-scroll">
+        {!action&&<section className="inspector-section"><button className="button secondary wide" onClick={()=>{const target=selectedImage?{kind:'image',id:selectedImage.id}:layer?{kind:'character',id:layer.characterId}:{kind:'background'},p={x:50,y:target.kind==='background'?50:100,scale:100,rotation:0,opacity:100,...(selectedImage??layer??visualFrame?.backgroundTransform??{})};useProjectStore.getState().addAction('keyframes',{afterId:activeActionId,values:{target,keyframes:[{id:'start',time:0,x:p.x,y:p.y,scale:p.scale,rotation:p.rotation,opacity:p.opacity,easing:'linear'},{id:'end',time:2,x:p.x,y:p.y,scale:p.scale,rotation:p.rotation,opacity:p.opacity,easing:'smooth'}]}});}}>Добавить движение слоя</button></section>}
         {selectedImage&&<ImageLayerFields scene={scene} layer={selectedImage}/>}
         {!selectedImage&&<section className="selected-object-card" data-editor-location={!action&&!layer?JSON.stringify(['background','__background']):undefined}><div className="object-avatar"><ActionIcon type={action?.type ?? "showCharacter"} /></div><div><strong>{action ? actionTypes.find(([type]) => type === action.type)?.[1] ?? "Действие" : character?.name ?? "Фон сцены"}</strong><span>{action ? "Блок сценария" : layer ? "Слой персонажа" : "Объект сцены"}</span></div></section>}
         {layer&&!action&&appearanceAction&&<section className="inspector-section"><Field label="Появление"><select value={appearanceAction.transition??'dissolve'} onChange={event=>updateAction(scene.id,appearanceAction.id,{transition:event.target.value})}><option value="none">Без анимации</option><option value="dissolve">Плавное появление</option><option value="moveinleft">Въезд слева</option><option value="moveinright">Въезд справа</option></select></Field></section>}
@@ -478,7 +498,7 @@ function CharacterWorkspace() {
 function LogicWorkspace() {
   const tab=useProjectStore(s=>s.logicTab),setTab=useProjectStore(s=>s.setLogicTab);
   const { project, addVariable, updateVariable, removeVariable, addFlag, updateFlag, removeFlag } = useProjectStore();
-  return <div className="logic-workspace story-workspace"><div className="story-workspace-tabs"><button className={tab === "map" ? "active" : ""} onClick={() => setTab("map")}>Карта сюжета</button><button className={tab === "logic" ? "active" : ""} onClick={() => setTab("logic")}>Переменные и флаги</button><button className={tab === "inventory" ? "active" : ""} onClick={()=>setTab("inventory")}>Инвентарь</button></div>{tab === "inventory" ? <InventoryWorkspace/> : tab === "map" ? <div className="logic-map"><StoryMap /></div> : <section className="logic-panels"><div><div className="workspace-section-head"><div><h2>Переменные</h2><p>Числа, текст и переключатели без кода.</p></div><button onClick={() => addVariable("number")}><Plus /></button></div>{project.variables.map((item) => <div className="logic-row" key={item.id}><input value={item.name} onChange={(event) => updateVariable(item.id, { name: event.target.value })} /><select value={item.type} onChange={(event) => updateVariable(item.id, { type: event.target.value, initial: event.target.value === "number" ? 0 : event.target.value === "boolean" ? false : "" })}><option value="number">Число</option><option value="text">Текст</option><option value="boolean">Да / нет</option><option value="relationship">Отношения</option></select>{item.type === "boolean" ? <select value={String(item.initial)} onChange={(event) => updateVariable(item.id, { initial: event.target.value === "true" })}><option value="false">Нет</option><option value="true">Да</option></select> : <input value={item.initial} type={item.type === "number" || item.type === "relationship" ? "number" : "text"} onChange={(event) => updateVariable(item.id, { initial: item.type === "number" || item.type === "relationship" ? Number(event.target.value) : event.target.value })} />}<button className="logic-delete" onClick={() => { if (!removeVariable(item.id)) window.alert("Переменная используется в сценарии или условии."); }}><Trash /></button></div>)}</div><div><div className="workspace-section-head"><div><h2>Флаги и события</h2><p>Запоминайте важные решения игрока.</p></div><button onClick={addFlag}><Plus /></button></div>{project.flags.map((item) => <div className="logic-row flag-row" key={item.id}><input value={item.name} onChange={(event) => updateFlag(item.id, { name: event.target.value })} /><label><input type="checkbox" checked={item.initial} onChange={(event) => updateFlag(item.id, { initial: event.target.checked })} />Включён в начале</label><button className="logic-delete" onClick={() => { if (!removeFlag(item.id)) window.alert("Флаг используется в сценарии или результате выбора."); }}><Trash /></button></div>)}</div></section>}</div>;
+  return <div className="logic-workspace story-workspace"><div className="story-workspace-tabs"><button className={tab === "map" ? "active" : ""} onClick={() => setTab("map")}>Карта сюжета</button><button className={tab === "logic" ? "active" : ""} onClick={() => setTab("logic")}>Переменные и флаги</button><button className={tab === "inventory" ? "active" : ""} onClick={()=>setTab("inventory")}>Инвентарь</button><button className={tab==="rpg"?"active":""} onClick={()=>setTab("rpg")}>Игровой мир</button></div>{tab === "rpg" ? <RpgWorkspace/> : tab === "inventory" ? <InventoryWorkspace/> : tab === "map" ? <div className="logic-map"><StoryMap /></div> : <section className="logic-panels"><div><div className="workspace-section-head"><div><h2>Переменные</h2><p>Числа, текст и переключатели без кода.</p></div><button onClick={() => addVariable("number")}><Plus /></button></div>{project.variables.map((item) => <div className="logic-row" key={item.id}><input value={item.name} onChange={(event) => updateVariable(item.id, { name: event.target.value })} /><select value={item.type} onChange={(event) => updateVariable(item.id, { type: event.target.value, initial: event.target.value === "number" ? 0 : event.target.value === "boolean" ? false : "" })}><option value="number">Число</option><option value="text">Текст</option><option value="boolean">Да / нет</option><option value="relationship">Отношения</option></select>{item.type === "boolean" ? <select value={String(item.initial)} onChange={(event) => updateVariable(item.id, { initial: event.target.value === "true" })}><option value="false">Нет</option><option value="true">Да</option></select> : <input value={item.initial} type={item.type === "number" || item.type === "relationship" ? "number" : "text"} onChange={(event) => updateVariable(item.id, { initial: item.type === "number" || item.type === "relationship" ? Number(event.target.value) : event.target.value })} />}<button className="logic-delete" onClick={() => { if (!removeVariable(item.id)) window.alert("Переменная используется в сценарии или условии."); }}><Trash /></button></div>)}</div><div><div className="workspace-section-head"><div><h2>Флаги и события</h2><p>Запоминайте важные решения игрока.</p></div><button onClick={addFlag}><Plus /></button></div>{project.flags.map((item) => <div className="logic-row flag-row" key={item.id}><input value={item.name} onChange={(event) => updateFlag(item.id, { name: event.target.value })} /><label><input type="checkbox" checked={item.initial} onChange={(event) => updateFlag(item.id, { initial: event.target.checked })} />Включён в начале</label><button className="logic-delete" onClick={() => { if (!removeFlag(item.id)) window.alert("Флаг используется в сценарии или результате выбора."); }}><Trash /></button></div>)}</div></section>}</div>;
 }
 
 function GalleryWorkspace() {
@@ -504,12 +524,13 @@ function LibraryView({ section, onSettings }) {
   </main>;
 }
 
-function PreviewObjects({project,scene,state,onPropClick}) {
-  const images=sceneImages(scene).filter(layer=>!state.hiddenProps?.includes(propKey(scene.id,layer.id))),order=scenePaintOrder(scene,state.layers,images,state.backgroundActionId);
-  return <div className="visual-scene-objects">
+function PreviewObjects({project,scene,state:originalState,onPropClick,paused,pixel=1}) {
+  const state=useMotionFrame(originalState,paused);
+  const images=(state.images??sceneImages(scene)).filter(layer=>!state.hiddenProps?.includes(propKey(scene.id,layer.id))),order=scenePaintOrder(scene,state.layers,images,state.backgroundActionId);
+  return <div className="visual-scene-objects" style={cameraStyle(state.camera,pixel)}>
     <div className="scene-background-clip" style={{zIndex:order.background}}>{state.background&&<img className="preview-background" style={backgroundStyle(state.backgroundTransform)} src={state.background} alt="Фон сцены"/>}</div>
     {state.layers.filter(l=>l.visible!==false).map(layer=>{const character=project.characters.find(c=>c.id===layer.characterId);const {source}=resolveCharacterSprite(character,layer.spriteId,project.resources);return <PreviewActor key={layer.characterId} layer={layer} character={character} source={source} paintIndex={order.characters.get(layer.characterId)} animation={state.animations?.[layer.characterId]} resolutionHeight={project.meta.resolution.height}/>;})}
-    {images.filter(layer=>layer.visible).map(layer=>{const resource=project.resources.find(r=>r.id===(state.propImages?.[propKey(scene.id,layer.id)]??layer.resourceId));if(!resource?.source)return null;const style={position:'absolute',objectFit:'contain',objectPosition:'center bottom',...imageLayerStyle(layer),zIndex:order.images.get(layer.id)},active=state.waiting?.type==='explore'&&!state.cg&&availableReactions(scene.id,layer,state,(condition,s)=>conditionPass(condition,s,project)).length>0;return active?<button key={layer.id} className="preview-interactive-prop" aria-label={`Взаимодействовать: ${layer.name}`} style={style} onClick={event=>{event.stopPropagation();if(event.detail>0&&!opaquePropHit(event.currentTarget.querySelector('img'),layer,event,event.currentTarget.parentElement.getBoundingClientRect()))return;onPropClick(layer.id);}}><img crossOrigin="anonymous" src={resource.source} alt={layer.name}/></button>:<img key={layer.id} className="preview-prop" style={style} src={resource.source} alt={layer.name}/>;})}
+    {images.filter(layer=>layer.visible).map(layer=>{const resource=project.resources.find(r=>r.id===(state.propImages?.[propKey(scene.id,layer.id)]??layer.resourceId));if(!resource?.source)return null;const style={position:'absolute',objectFit:'contain',objectPosition:'center bottom',...imageLayerStyle(layer),zIndex:order.images.get(layer.id)},active=state.waiting?.type==='explore'&&!state.cg&&availableReactions(scene.id,layer,state,(condition,s)=>conditionPass(condition,s,project)).length>0;return active?<button key={layer.id} className="preview-interactive-prop" aria-label={`Взаимодействовать: ${layer.name}`} style={style} onClick={event=>{event.stopPropagation();if(event.detail>0&&!opaquePropHit(event.currentTarget.querySelector('img'),layer,event,event.currentTarget.closest('.preview-game').getBoundingClientRect(),state.camera))return;onPropClick(layer.id);}}><img crossOrigin="anonymous" src={resource.source} alt={layer.name}/></button>:<img key={layer.id} className="preview-prop" style={style} src={resource.source} alt={layer.name}/>;})}
   </div>;
 }
 function PreviewModal({ onClose }) {
@@ -548,11 +569,12 @@ function PreviewModal({ onClose }) {
   const quickAction=id=>{controls.setError('');if(id==='rollback')controls.rollback();else if(['auto','skip'].includes(id))setMode(previous=>previous===id?null:id);else setPanel(id);};
   const keyDown=e=>{e.stopPropagation();if(e.key==='Escape'){e.preventDefault();if(panel)setPanel(null);else onClose();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s')e.preventDefault();if(e.key==='Tab'){const root=previewDialog.current,fields=[...root.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled)')].filter(el=>el.getClientRects().length),first=fields[0],last=fields.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}};
   return <div className="modal-backdrop preview-backdrop" ref={previewDialog} role="dialog" aria-modal="true" aria-label="Предпросмотр игры" onKeyDown={keyDown}><div className="preview-window"><div className="preview-header"><strong>Предпросмотр · {scene?.title} · блок {state.index+1}</strong><div className="preview-actions">{window.istoriya?.runPreview && <button className="button primary" disabled={running} onClick={runRealPreview}>Открыть игру отдельно</button>}<button className="icon-button" aria-label="Закрыть предпросмотр" onClick={onClose}><X /></button></div></div>
-    <div className="preview-debug-toolbar"><button onClick={()=>restart(project.chapters[0].scenes[0])}>С начала игры</button><button onClick={()=>restart(activeSceneId,activeActionId)}>С выбранного действия</button><StoryDestinationField compact project={project} label="Перейти к сцене" value={{sceneId:state.sceneId}} allowChapters={false} allowEmpty={false} onChange={({sceneId})=>restart(sceneId)}/><button onClick={()=>{setMode(null);setState(s=>advancePreview(project,s));}} disabled={state.ended || action?.type==="choice" || state.waiting?.type==="pause" || (action?.type==='explore'&&!explorationReady(action,state,project))}>Далее</button><button onClick={()=>setPanel('menu')}>Меню теста</button><button disabled={!session.past.length} onClick={controls.rollback}>Назад по тесту</button></div>
+    <div className="preview-debug-toolbar"><button onClick={()=>restart(project.chapters[0].scenes[0])}>С начала игры</button><button onClick={()=>restart(activeSceneId,activeActionId)}>С выбранного действия</button><StoryDestinationField compact project={project} label="Перейти к сцене" value={{sceneId:state.sceneId}} allowChapters={false} allowEmpty={false} onChange={({sceneId})=>restart(sceneId)}/><button onClick={()=>{setMode(null);setState(s=>advancePreview(project,s));}} disabled={state.ended || state.waiting?.type==='rpg' || action?.type==="choice" || state.waiting?.type==="pause" || (action?.type==='explore'&&!explorationReady(action,state,project))}>Далее</button><button onClick={()=>setPanel('menu')}>Меню теста</button><button disabled={!session.past.length} onClick={controls.rollback}>Назад по тесту</button></div>
     {runStatus && <div className="preview-status">{runStatus}</div>}
     {controls.error&&!panel&&<div className="preview-status" role="alert">{controls.error}</div>}
     <div ref={previewFrame} className="preview-game" onClick={()=>!state.ended && !['pause','explore'].includes(state.waiting?.type) && setState(s=>advancePreview(project,s))} style={{aspectRatio:`${project.meta.resolution.width}/${project.meta.resolution.height}`}}>
-      <PreviewGameplay project={project} scene={scene} state={state} setState={setState}>{onPropClick=><PreviewObjects project={project} scene={scene} state={state} onPropClick={onPropClick}/>}</PreviewGameplay>
+      <PreviewGameplay project={project} scene={scene} state={state} setState={setState}>{onPropClick=><PreviewObjects project={project} scene={scene} state={state} paused={!!panel} pixel={previewWidth/project.meta.resolution.width} onPropClick={onPropClick}/>}</PreviewGameplay>
+      {!panel&&<RpgGameplay project={project} state={state} setState={setState}/>}
       {state.cg && <img className="preview-cg" src={state.cg} alt="Иллюстрация" />}
       {["dialogue","narration"].includes(action?.type) && !state.ended && (project.ui.layout?.dialogue?.enabled?<GameDialogue project={project} action={action} character={action.type==='dialogue'?speaker:null} width={previewWidth} animate/>:<div className={`preview-dialogue position-${project.ui.dialoguePosition}`} style={{backgroundImage:project.ui.dialogueBackground ? `url(${project.ui.dialogueBackground})` : undefined,opacity:project.ui.dialogueOpacity/100}}>{action.type==="dialogue" && <strong style={{color:speaker?.color}}>{speaker?.name ?? "Автор"}</strong>}<StyledText project={project} action={action} animate factor={.75}>{action.text}</StyledText><span>Нажмите, чтобы продолжить</span></div>)}
       {action?.type==="choice" && !state.ended && (project.ui.layout?.choice?.enabled?<><GameDialogue project={project} action={{type:'narration',text:action.prompt}} width={previewWidth}/><GameChoices project={project} options={action.options} width={previewWidth} onChoose={id=>setState(s=>advancePreview(project,s,id))}/></>:<div className="preview-choice"><strong>{action.prompt}</strong>{action.options.map(option=><button key={option.id} onClick={(event)=>{event.stopPropagation();setState(s=>advancePreview(project,s,option.id));}}>{option.text}</button>)}</div>)}
@@ -640,6 +662,7 @@ function ValidationModal({ onClose }) {
   const { project, setActiveScene, setActiveSection, setSelectedResource, setSelectedCharacter, setActiveAction,selectVisualLayer,setLogicTab,setSelectedInventory } = useProjectStore();
   const result = useMemo(() => validateProject(project), [project]);
   const openIssue = (item) => {
+    if(item.code?.startsWith('rpg-')){setLogicTab('rpg');setActiveSection('story');onClose();return;}
     if(item.uiScreen){useProjectStore.getState().setUiScreen(item.uiScreen);useProjectStore.getState().setUiElement(item.uiScreen==='menu'?'button:start':item.uiScreen==='dialogue'?'window':item.uiScreen==='pause'?'title':['choice','quick'].includes(item.uiScreen)?'screen':'content');setActiveSection('interface');onClose();return;}
     if (item.sceneId) { setActiveScene(item.sceneId); if (item.actionId) setActiveAction(item.actionId); if(item.layerId)selectVisualLayer(item.layerId); }
     else if(item.itemId){setSelectedInventory(item.itemId);setLogicTab('inventory');setActiveSection('story');}
@@ -731,9 +754,9 @@ export function App() {
   if (view === "home") return <>{saveFailure}<ProjectHub onNewProject={async (template) => { const next = await newProject(template); if (next.meta.projectFolder && window.istoriya?.createProjectOnDisk) { await window.istoriya.createProjectOnDisk(next); await saveNow(); } setView("editor"); }} onOpenProject={async (projectId) => { try { if (await openProject(projectId)) setView("editor"); } catch(error) { setToast(error.message); } }} onOpenFile={openFile} /><input ref={importInput} hidden type="file" accept=".vnproject,application/json" onChange={openImportedProject} />{toast && <div className="toast"><CheckCircle weight="fill" />{toast}</div>}</>;
 
   return (
-    <WorkspaceLayout inspector={mainWorkspace && !mapWorkspace} className={`${mainWorkspace ? "" : "library-mode"} ${mapWorkspace ? "map-mode" : ""}`}>{saveFailure}<ProjectFonts project={project}/><EditorNavigationFocus/><TopBar onSearch={()=>setModal('search')} onPreview={() => setModal("preview")} onBuild={() => setModal("build")} onValidate={() => setModal("validation")} onSettings={() => setModal("settings")} onExport={onExport} onImport={openFile} onHome={async () => { if (await saveNow()) setView("home"); else setToast("Не удалось сохранить проект."); }} /><NavigationRail /><ProjectTree />
-      {mainWorkspace ? <EditorWorkspace map={mapWorkspace} scene={<SceneCanvas onBackgroundPick={() => setModal('background')} />}><ScenarioEditor /></EditorWorkspace> : <LibraryView section={activeSection} onSettings={() => setModal("settings")} />}
-      {mainWorkspace && !mapWorkspace && <Inspector />}
+    <WorkspaceLayout inspector={mainWorkspace && !mapWorkspace} className={`${mainWorkspace ? "" : "library-mode"} ${mapWorkspace ? "map-mode" : ""}`}>{saveFailure}<ProjectFonts project={project}/><EditorNavigationFocus/><TopBar onSearch={()=>setModal('search')} onPreview={() => setModal("preview")} onBuild={() => setModal("build")} onValidate={() => setModal("validation")} onSettings={() => setModal("settings")} onExport={onExport} onImport={openFile} onHome={async () => { if (await saveNow()) setView("home"); else setToast("Не удалось сохранить проект."); }} /><NavigationRail /><DockPanel panel="project"><ProjectTree /></DockPanel>
+      {mainWorkspace ? <EditorWorkspace map={mapWorkspace} scene={<SceneCanvas onBackgroundPick={() => setModal('background')} />}>{mapWorkspace?<ScenarioEditor/>:<DockPanel panel="storyboard"><ScenarioEditor /></DockPanel>}</EditorWorkspace> : <LibraryView section={activeSection} onSettings={() => setModal("settings")} />}
+      {mainWorkspace && !mapWorkspace && <DockPanel panel="inspector"><Inspector /></DockPanel>}
       {modal==='background'&&<BackgroundPicker sceneId={activeSceneId} onClose={()=>setModal(null)}/>}
       <input ref={importInput} hidden type="file" accept=".vnproject,application/json" onChange={openImportedProject} />
       {modal === "search"&&<ProjectSearch onClose={()=>setModal(null)}/>}{modal === "preview" && <PreviewModal onClose={() => setModal(null)} />}{modal === "settings" && <SettingsModal onClose={() => setModal(null)} />}{modal === "build" && <BuildModal onClose={() => setModal(null)} onExport={onExport} />}{modal === "validation" && <ValidationModal onClose={() => setModal(null)} />}{toast && <div className="toast"><CheckCircle weight="fill" />{toast}</div>}

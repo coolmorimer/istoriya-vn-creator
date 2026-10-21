@@ -11,6 +11,8 @@ html, body, #root { min-width:760px; min-height:600px; }
 .scene-background-clip {position:absolute;inset:0;overflow:hidden;pointer-events:none;background:#000;}
 .scene-background-clip>img {max-width:none;max-height:none;}
 .background-edit-outline {border:2px solid #e9b259;z-index:80;cursor:move;touch-action:none;}
+.background-motion-outline{position:absolute;inset:0;z-index:80;pointer-events:none}.background-motion-outline>.background-edit-outline{pointer-events:auto}
+.game-canvas .scene-image-layer>img{filter:blur(calc(var(--prop-blur,0px) * var(--scene-pixel,1)))}
 .background-edit-outline>span:first-child {position:absolute;left:0;top:-22px;font-size:11px;padding:3px 6px;background:#604620;color:#fff;white-space:nowrap;}
 .background-edit-outline .sprite-resize-handle {border-color:#e9b259;}
 .game-canvas:has(.background-edit-outline) .dialogue-overlay {pointer-events:none;opacity:.25;}

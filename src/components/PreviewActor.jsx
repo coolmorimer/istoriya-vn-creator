@@ -9,5 +9,5 @@ export function PreviewActor({layer,character,source,animation,resolutionHeight,
   return ()=>playback.cancel();
  },[animation?.token,source,resolutionHeight]);
  if(!source)return null;
- return <img ref={ref} className="preview-actor" data-character-id={layer.characterId} src={source} alt={character?.name??'Персонаж'} style={{left:`${layer.x??50}%`,top:`${layer.y??100}%`,opacity:(layer.opacity??100)/100,zIndex:paintIndex??layer.zOrder??10,transformOrigin:'50% 100%',transform:actorTransformStyle(layer)}}/>;
+ return <img ref={ref} className="preview-actor" data-character-id={layer.characterId} src={source} alt={character?.name??'Персонаж'} style={{left:`${layer.x??50}%`,top:`${layer.y??100}%`,opacity:(layer.opacity??100)/100,zIndex:paintIndex??layer.zOrder??10,transformOrigin:'50% 100%',filter:`blur(calc(${layer.blur??0}px * var(--scene-pixel, 1)))`,transform:actorTransformStyle(layer)}}/>;
 }

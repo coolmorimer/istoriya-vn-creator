@@ -6,6 +6,7 @@ export const useWorkspaceLayout = () => useContext(LayoutContext);
 export function WorkspaceLayout({ inspector, className, children }) {
   const [layout, setLayout] = useState(() => readLayout(window.localStorage));
   const [width, setWidth] = useState(window.innerWidth);
+  const [activePanel,setActivePanel]=useState(null);
   const request=useProjectStore(s=>s.navigationRequest),target=useProjectStore(s=>s.navigationTarget),projectId=useProjectStore(s=>s.project.id);
   useEffect(()=>{if(request&&target?.projectId===projectId&&target.kind==='scene')setLayout(current=>normalizeLayout({...current,showRight:true,showBottom:true}));},[request,target,projectId]);
   const previous = useRef(null);
@@ -15,12 +16,12 @@ export function WorkspaceLayout({ inspector, className, children }) {
   useEffect(() => { const resize = () => setWidth(window.innerWidth); window.addEventListener('resize', resize); return () => window.removeEventListener('resize', resize); }, []);
   const sizes = layoutWidths(layout, width, inspector);
   const reverse=inspector && layout.inspectorSide==='left',left=reverse?sizes.right:sizes.left,right=reverse?sizes.left:sizes.right;
-  return <LayoutContext.Provider value={{ layout, patch, reverse }}><div className={`app-shell dock-layout ${className} ${reverse?'dock-reversed':''} ${layout.showLeft ? '' : 'dock-hide-left'} ${layout.showRight ? '' : 'dock-hide-right'}`} style={{ '--dock-left': `${left}px`, '--dock-right': `${right}px`, '--dock-left-gap': left ? '7px' : '0px', '--dock-right-gap': right ? '7px' : '0px' }}>
+  return <LayoutContext.Provider value={{ layout, patch, reverse,activePanel,setActivePanel }}><div className={`app-shell dock-layout ${className} ${reverse?'dock-reversed':''} ${layout.showLeft ? '' : 'dock-hide-left'} ${layout.showRight ? '' : 'dock-hide-right'}`} style={{ '--dock-left': `${left}px`, '--dock-right': `${right}px`, '--dock-left-gap': left ? '7px' : '0px', '--dock-right-gap': right ? '7px' : '0px' }}>
     <div className="workspace-bar" aria-label="Рабочее пространство"><strong>Панели</strong>
       <button aria-pressed={layout.showLeft} onClick={() => patch({ showLeft: !layout.showLeft })}>Проект</button>
       {inspector && <><button aria-pressed={layout.showRight} onClick={() => patch({ showRight: !layout.showRight })}>Свойства и слои</button><button aria-pressed={layout.showBottom} onClick={() => patch({ showBottom: !layout.showBottom })}>Кадры</button></>}
       <div className="workspace-presets">{inspector&&<select aria-label="Расположение свойств" value={layout.inspectorSide} onChange={event=>patch({inspectorSide:event.target.value})}><option value="right">Свойства справа</option><option value="left">Свойства слева</option></select>}<button onClick={focus}>Только холст / назад</button><select aria-label="Компоновка панелей" value="" onChange={event => { previous.current = null; setLayout(layoutPreset(event.target.value)); }}><option value="" disabled>Компоновка…</option><option value="default">Стандартная</option><option value="writing">Работа с текстом</option><option value="canvas">Большой холст</option></select><button onClick={() => { previous.current = null; setLayout({ ...DEFAULT_LAYOUT }); }}>Сбросить</button></div>
-    </div>{children}{layout.showLeft && <PanelSplitter side="left" />}{layout.showRight && inspector && <PanelSplitter side="right" />}
+    </div>{children}{layout.showLeft&&!layout.floating?.project && <PanelSplitter side="left" />}{layout.showRight && inspector&&!layout.floating?.inspector && <PanelSplitter side="right" />}
   </div></LayoutContext.Provider>;
 }
 function PanelSplitter({ side }) {

@@ -7,8 +7,8 @@ import {authorUi} from '../src/domain/uiAuthoring.js';
 import {gameUiScript} from '../runtime/game-ui-script.mjs';
 import {assertProjectShape} from '../runtime/project-format.mjs';
 test('all eleven screens are editable; old schema5 visual screens keep standard auxiliary menus',()=>{
- const p=createProject();assert.equal(p.schemaVersion,6);assertProjectShape(p);assert.equal(Object.values(gameUi(p)).filter(v=>v?.enabled).length,11);assert.deepEqual(uiLayoutProblems(p),[]);
- const old=structuredClone(p);old.schemaVersion=5;old.ui.layout.version=1;for(const [id]of SYSTEM_SCREENS)delete old.ui.layout[id];assertProjectShape(old);for(const [id]of SYSTEM_SCREENS)assert.equal(gameUi(old)[id].enabled,false);assert.equal(gameUi(old).menu.enabled,true);assert.doesNotMatch(gameUiScript(old,new Map(),{quote:JSON.stringify}),/screen save\(|screen preferences\(|screen notify\(/);
+ const p=createProject();assert.equal(p.schemaVersion,8);assertProjectShape(p);assert.equal(Object.values(gameUi(p)).filter(v=>v?.enabled).length,11);assert.deepEqual(uiLayoutProblems(p),[]);
+ const old=structuredClone(p);old.schemaVersion=5;delete old.rpg;old.ui.layout.version=1;for(const [id]of SYSTEM_SCREENS)delete old.ui.layout[id];assertProjectShape(old);for(const [id]of SYSTEM_SCREENS)assert.equal(gameUi(old)[id].enabled,false);assert.equal(gameUi(old).menu.enabled,true);assert.doesNotMatch(gameUiScript(old,new Map(),{quote:JSON.stringify}),/screen save\(|screen preferences\(|screen notify\(/);
 });
 test('system geometry, styling, resources and typed settings edit actual export data',()=>{
  const p=createProject();authorUi(p,{projectId:p.id,screen:'save',target:'content',patch:{columns:2,rows:3}},'unused');assert.equal(p.ui.layout.save.content.columns,2);
@@ -18,7 +18,7 @@ test('system geometry, styling, resources and typed settings edit actual export 
 test('bad grids, hidden exit, malformed settings and unknown pause actions fail closed',()=>{
  const p=createProject();p.ui.layout.save.content.columns=0;p.ui.layout.load.content.rows=1.5;p.ui.layout.gallery.content.cardHeight=0;p.ui.layout.preferences.options.music='true';p.ui.layout.history.back.visible=false;p.ui.layout.notify.duration=-1;assert.ok(uiLayoutProblems(p).length>=6);
  p.ui.layout.pause.buttons[0].id='exec';assert.throws(()=>assertGameUiShape(p.ui.layout),/паузы/);assert.throws(()=>gameUiScript(p,new Map(),{quote:JSON.stringify}));
- const q=createProject();q.schemaVersion=5;assert.throws(()=>assertProjectShape(q),/формат проекта 6/);
+ const q=createProject();q.schemaVersion=5;delete q.rpg;assert.throws(()=>assertProjectShape(q),/формат проекта 6/);
 });
 test('system screens emit real file actions, preferences, history, gallery unlocks and timed notification',()=>{
  const p=createProject();p.ui.layout.preferences.options.skipAll=false;p.ui.layout.preferences.options.resolution=false;const script=gameUiScript(p,new Map(),{quote:JSON.stringify});

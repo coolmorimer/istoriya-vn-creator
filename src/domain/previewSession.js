@@ -1,17 +1,21 @@
 import {advancePreview,initialPreview} from './preview.js';
 import {backgroundSource} from '../../runtime/background-transform.mjs';
 import {ASSET_FIELDS} from '../../runtime/asset-fields.mjs';
+import {sceneImages} from '../../runtime/image-layers.mjs';
+import {MOTION_FIELDS,cameraPose} from '../../runtime/keyframes.mjs';
+import {initialRpg,validRpgState} from '../../runtime/rpg-model.mjs';
 const LIMIT=60;
 const media=(key,value)=>ASSET_FIELDS.has(key)?undefined:value;
 export function previewRevision(project){
  // Rust's serde maps sort keys, while freshly authored JS objects retain
  // insertion order. Equivalent narratives must survive this round trip.
  const canonical=(key,value)=>ASSET_FIELDS.has(key)?undefined:value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.keys(value).sort().map(k=>[k,value[k]])):value;
- const data=JSON.stringify({scenes:project.scenes,chapters:project.chapters,characters:project.characters,variables:project.variables,flags:project.flags,items:project.items,resources:project.resources.map(({source,...r})=>r),resolution:project.meta.resolution,...(project.meta.mediaRevision?{mediaRevision:project.meta.mediaRevision}:{})},canonical);
+ const data=JSON.stringify({scenes:project.scenes,chapters:project.chapters,characters:project.characters,variables:project.variables,flags:project.flags,items:project.items,...(project.rpg?.enabled?{rpg:project.rpg}:{}),resources:project.resources.map(({source,...r})=>r),resolution:project.meta.resolution,...(project.meta.mediaRevision?{mediaRevision:project.meta.mediaRevision}:{})},canonical);
  let a=2166136261,b=5381;for(let i=0;i<data.length;i++){a=Math.imul(a^data.charCodeAt(i),16777619);b=Math.imul(b,33)^data.charCodeAt(i);}return `${data.length}-${a>>>0}-${b>>>0}`;
 }
 export function packPreview(state){
- const {background,cg,animations,audioStops,...data}=state;
+ const {background,cg,animations,audioStops,motions,...data}=state;
+ if(data.images)data.images=data.images.map(l=>({id:l.id,...Object.fromEntries(MOTION_FIELDS.filter(k=>l[k]!=null).map(k=>[k,l[k]]))}));
  return JSON.parse(JSON.stringify(data,media));
 }
 let restoreToken=0;
@@ -20,10 +24,14 @@ export function unpackPreview(project,data){
  const object=v=>v&&typeof v==='object'&&!Array.isArray(v),numbers=['x','y','scale','rotation','opacity'];
  if(![data.inventory,data.variables,data.flags,data.audio,data.propImages??{}].every(object)||data.layers.some(l=>!object(l)||!project.characters.some(c=>c.id===l.characterId)||numbers.some(k=>l[k]!=null&&!Number.isFinite(l[k])))||data.hiddenProps.some(v=>typeof v!=='string')||data.usedInteractions.some(v=>typeof v!=='string')||Object.values(data.inventory).some(v=>!Number.isSafeInteger(v)||v<0)||Object.values(data.flags).some(v=>typeof v!=='boolean')||Object.values(data.variables).some(v=>!['string','number','boolean'].includes(typeof v)||(typeof v==='number'&&!Number.isFinite(v))))throw Error('Состояние тестового сохранения повреждено.');
  const s=structuredClone(data),scene=project.scenes[s.sceneId];
- if(s.waiting&&!['dialogue','narration','choice','explore','pause'].includes(s.waiting.type))throw Error('Неизвестный шаг в тестовом сохранении.');
+ if(project.rpg?.enabled&&!s.rpg||s.rpg&&!validRpgState(project,s.rpg))throw Error('Игровые показатели в сохранении повреждены.');s.rpg??=initialRpg(project);
+ const validPose=p=>object(p)&&MOTION_FIELDS.every(k=>p[k]==null||Number.isFinite(p[k]))&&(p.scale==null||p.scale>=1&&p.scale<=2000)&&(p.opacity==null||p.opacity>=0&&p.opacity<=100)&&(p.blur==null||p.blur>=0&&p.blur<=100);
+ if(s.camera&&!validPose(s.camera)||s.images&&(!Array.isArray(s.images)||s.images.some(l=>!validPose(l)||!scene.images?.some(source=>source.id===l.id))))throw Error('Положение камеры или предмета в тестовом сохранении повреждено.');
+ s.camera??=cameraPose();const savedImages=new Map((s.images??[]).map(l=>[l.id,l]));s.images=sceneImages(scene).map(l=>({...l,...savedImages.get(l.id)}));
+ if(s.waiting&&!['dialogue','narration','choice','explore','pause','rpg'].includes(s.waiting.type))throw Error('Неизвестный шаг в тестовом сохранении.');
  if(s.waiting?.type==='choice'&&(!Array.isArray(s.waiting.options)||s.waiting.options.some(o=>!object(o)||typeof o.id!=='string'||typeof o.text!=='string')))throw Error('Повреждены варианты тестового сохранения.');
  s.background=s.backgroundActionId?project.resources.find(r=>r.id===scene.actions.find(a=>a.id===s.backgroundActionId)?.assetId)?.source:backgroundSource(project,scene);
- s.cg=s.cgAssetId?project.resources.find(r=>r.id===s.cgAssetId)?.source:null;s.animations={};delete s.audioStops;
+ s.cg=s.cgAssetId?project.resources.find(r=>r.id===s.cgAssetId)?.source:null;s.animations={};s.motions={};delete s.audioStops;
  for(const [channel,track]of Object.entries(s.audio)){if(!['music','voice','sound','ambience'].includes(channel)||!track||!project.resources.some(r=>r.id===track.assetId))throw Error('Запись в тестовом сохранении не найдена.');track.token=`restore-${++restoreToken}`;}
  return s;
 }

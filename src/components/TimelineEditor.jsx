@@ -17,8 +17,8 @@ export function TimelineEditor({scene,actionLabel,content}) {
   const clips=timelineClips(scene);
   const duration=Math.max(5,...clips.map(c=>c.end));
   const visibleSeconds=Math.max(15,duration+5);
-  const tracks=[...new Set(['background',...clips.filter(c=>category(c.track)==='character').map(c=>c.track),'text','choice',...clips.filter(c=>category(c.track)==='audio').map(c=>c.track),'audio:music','logic'])];
-  const label=track=>track==='background'?'Фон и иллюстрации':track==='text'?'Диалоги':track==='choice'?'Выборы':track==='logic'?'Действия':category(track)==='character'?(project.characters.find(c=>c.id===track.split(':')[1])?.name??'Персонажи'):({'audio:music':'Музыка','audio:sound':'Звуки','audio:voice':'Озвучка','audio:ambience':'Атмосфера'}[track]??'Звук');
+  const tracks=[...new Set(['background',...clips.filter(c=>['character','motion'].includes(category(c.track))).map(c=>c.track),'text','choice',...clips.filter(c=>category(c.track)==='audio').map(c=>c.track),'audio:music','logic'])];
+  const label=track=>category(track)==='motion'?`Движение · ${track.split(':')[1]==='camera'?'Камера':track.split(':')[1]==='background'?'Фон':track.split(':')[1]==='image'?(scene.images??[]).find(l=>l.id===track.split(':')[2])?.name??'Предмет':project.characters.find(c=>c.id===track.split(':')[2])?.name??'Персонаж'}`:track==='background'?'Фон и иллюстрации':track==='text'?'Диалоги':track==='choice'?'Выборы':track==='logic'?'Действия':category(track)==='character'?(project.characters.find(c=>c.id===track.split(':')[1])?.name??'Персонажи'):({'audio:music':'Музыка','audio:sound':'Звуки','audio:voice':'Озвучка','audio:ambience':'Атмосфера'}[track]??'Звук');
   const selected=clips.find(c=>c.action.id===activeActionId);
   const width=visibleSeconds*pixels;
   const step=pixels<35?5:pixels<70?2:1;

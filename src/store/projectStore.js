@@ -19,11 +19,13 @@ import {authorFont} from '../domain/fontAuthoring.js';
 import {authorMediaRepairs,authorMediaImports} from '../domain/mediaRepair.js';
 import {clearUiResource} from '../../runtime/game-ui.mjs';
 import {editorNavigation} from '../domain/editorNavigation.js';
+import {MOTION_FIELDS,motionDuration} from '../../runtime/keyframes.mjs';
+import {defaultRpg} from '../../runtime/rpg-model.mjs';
 
 const STORAGE_KEY = "istoriya-project-v2";
 const LIBRARY_KEY = "istoriya-project-library-v1";
 const DRAFT_KEY = "istoriya-project-recovery-v1";
-const CURRENT_SCHEMA = 6;
+const CURRENT_SCHEMA = 8;
 let saveQueue=Promise.resolve();
 let startupWarning = null;
 let startupRecovery = null;
@@ -56,6 +58,7 @@ export function normalizeProject(source) {
   migrateAssets(project);
   project.schemaVersion = CURRENT_SCHEMA;
   project.items??=[];
+  project.rpg??=defaultRpg();
   project.id ||= createId("project");
   project.meta = {
     ...structuredClone(defaultProject.meta),
@@ -233,6 +236,7 @@ export const useProjectStore = create((set, get) => ({
   editClip: (sceneId,actionId,patch) => withHistory(set,project=>{
     const scene=project.scenes[sceneId];materializeTimeline(scene);
     const action=scene.actions.find(a=>a.id===actionId);if(!action)return;
+    if(action.type==='keyframes'&&patch.duration!=null){const duration=Math.max(.1,Math.min(600,Number(patch.duration)||.1)),ratio=duration/motionDuration(action);for(const f of action.keyframes)f.time=Number((f.time*ratio).toFixed(6));patch={...patch,duration};}
     Object.assign(action.timeline,patch);
     action.timeline.start=roundTime(Math.max(0,action.timeline.start));
     action.timeline.duration=roundTime(Math.max(.1,action.timeline.duration));
@@ -300,7 +304,9 @@ export const useProjectStore = create((set, get) => ({
 
   setActiveSection: (activeSection) => set({ activeSection }),
   setActiveScene: (activeSceneId) => set((state) => {const scene=state.project.scenes[activeSceneId],activeActionId=scene?.timelineEnabled?null:scene?.actions[0]?.id??null;return {activeSceneId,activeActionId,timelineTime:state.activeSceneId===activeSceneId?state.timelineTime:0,activeLayerId:activeActionId?null:scene?.characters?.[0]?.id??null,activeSection:'scenes'};}),
-  setActiveAction: (activeActionId) => set({ activeActionId, activeLayerId: null, inspectorTab: "properties" }),
+  motionTime:null,
+  setMotionTime:motionTime=>set({motionTime}),
+  setActiveAction: (activeActionId) => set({ activeActionId, activeLayerId: null, motionTime:null,inspectorTab: "properties" }),
   setActiveLayer: (activeLayerId) => set({ activeLayerId, inspectorTab: "properties" }),
   selectVisualLayer: (activeLayerId) => set({ activeLayerId, inspectorTab: "properties" }),
   setSelectedCharacter: (selectedCharacterId) => set({ selectedCharacterId }),
@@ -341,7 +347,7 @@ export const useProjectStore = create((set, get) => ({
   updateScene: (sceneId, patch) => withHistory(set, (project) => Object.assign(project.scenes[sceneId], patch)),
   updateAction: (sceneId, actionId, patch) => withHistory(set, (project) => {
     const action = project.scenes[sceneId].actions.find((item) => item.id === actionId);
-    if (action) { Object.assign(action, patch); if(action.timeline && patch.duration != null) action.timeline.duration=Math.max(.1,Number(patch.duration)||.1); }
+    if (action) { const values={...patch};if(action.type==='keyframes'&&!values.keyframes){for(const k of MOTION_FIELDS)if(values[k]!=null){action.keyframes.at(-1)[k]=values[k];delete values[k];}}Object.assign(action, values); if(action.timeline && patch.duration != null) action.timeline.duration=Math.max(.1,Number(patch.duration)||.1); }
   }),
 
   addResource: (resource) => {
@@ -403,6 +409,7 @@ export const useProjectStore = create((set, get) => ({
 
   removeCharacter: (characterId) => {
     const state = get();
+    if(state.project.rpg?.actors?.some(a=>a.characterId===characterId))return false;
     if (state.project.characters.length < 1) return false;
     const used = Object.values(state.project.scenes).some((scene) => scene.characters?.some((layer) => layer.characterId === characterId) || scene.actions?.some((action) => action.speakerId === characterId || action.characterId === characterId));
     if (used || Object.values(state.project.scenes).some(scene=>(scene.images??[]).some(layer=>layer.interactions?.some(r=>r.speakerId===characterId)))) return false;
@@ -461,6 +468,8 @@ export const useProjectStore = create((set, get) => ({
   updatePropReaction: (sceneId,layerId,reactionId,patch) => withHistory(set,project=>changePropReaction(project,sceneId,layerId,reactionId,patch,createId('item'))),
   removePropReaction: (sceneId,layerId,reactionId) => withHistory(set,project=>{const layer=project.scenes[sceneId]?.images?.find(l=>l.id===layerId);if(layer)layer.interactions=(layer.interactions??[]).filter(r=>r.id!==reactionId);}),
   updateItem: (itemId,patch) => withHistory(set,project=>{const item=project.items?.find(i=>i.id===itemId);if(item)Object.assign(item,patch);}),
+  updateRpg: patch => withHistory(set,project=>{project.rpg??=defaultRpg();Object.assign(project.rpg,patch);}),
+  editRpg: recipe => withHistory(set,project=>{project.rpg??=defaultRpg();recipe(project.rpg,project);}),
   addItem: () => {const id=createId('item');withHistory(set,project=>{project.items??=[];project.items.push({id,name:'Новый предмет',description:'',iconResourceId:null});},()=>({selectedInventoryId:id}));return id;},
   removeItem: itemId => {if(logicReferences(get().project,'item',itemId).length)return false;withHistory(set,project=>{project.items=(project.items??[]).filter(i=>i.id!==itemId);},project=>({selectedInventoryId:project.items[0]?.id??null}));return true;},
   attachAudio: request => {let id;withHistory(set,project=>{id=authorAudioAttachment(project,request,createId('resource'));});return id;},
@@ -641,6 +650,7 @@ export const useProjectStore = create((set, get) => ({
 
   removeScene: (sceneId) => {
     const project = get().project;
+    if(project.rpg?.locations?.some(l=>l.sceneId===sceneId)||project.rpg?.actors?.some(a=>['talkSceneId','winSceneId','loseSceneId'].some(k=>a[k]===sceneId)))return false;
     if (Object.keys(project.scenes).length < 2) return false;
     const referenced = Object.values(project.scenes).some((scene) => scene.actions?.some((action) => action.targetSceneId === sceneId || action.trueSceneId === sceneId || action.falseSceneId === sceneId || action.options?.some((option) => option.targetSceneId === sceneId)));
     if (referenced || Object.values(project.scenes).some(scene=>(scene.images??[]).some(layer=>layer.interactions?.some(r=>r.targetSceneId===sceneId)))) return false;
@@ -679,12 +689,14 @@ export const useProjectStore = create((set, get) => ({
         narration: { id, type: "narration", text: "Текст автора" },
         choice: { id, type: "choice", prompt: "Что сделать?", options: [1,2].map(n=>({id:createId('choice'),text:`Вариант ${n}`,targetSceneId:null,effects:[]})) },
         explore: {id,type:'explore',prompt:'Осмотрите сцену',requiredItemId:null,requiredFlagId:null},
+        rpg: {id,type:'rpg',operation:'menu',statId:'health',statOperation:'add',value:10,actorId:''},
         background: { id, type: "background", title: "Изменить фон", assetId: null, assetName: "Выберите изображение", transition: "dissolve" },
         showCharacter: { id, type: "showCharacter", characterId: firstCharacter?.id ?? null, spriteId: null, position: firstCharacter?.defaultPosition ?? "center", transition: "dissolve" },
         hideCharacter: { id, type: "hideCharacter", characterId: firstCharacter?.id ?? null, transition: "dissolve" },
         changeSprite: { id, type: "changeSprite", characterId: firstCharacter?.id ?? null, spriteId: null, transition: "dissolve" },
         moveCharacter: { id, type: "moveCharacter", characterId: firstCharacter?.id ?? null, position: firstCharacter?.defaultPosition ?? "center", duration: 0.5 },
         characterAnimation: { id, type: "characterAnimation", characterId: firstCharacter?.id ?? null, animation: "shake", duration: 0.5, intensity: 1 },
+        keyframes:{id,type:'keyframes',target:{kind:'camera'},keyframes:[{id:createId('key'),time:0,x:50,y:50,scale:100,rotation:0,opacity:100,easing:'linear'},{id:createId('key'),time:2,x:50,y:50,scale:100,rotation:0,opacity:100,easing:'smooth'}]},
         music: { id, type: "music", assetId: null, volume: 0.8, fadeIn: 1, loop: true },
         stopMusic: { id, type: "stopMusic", fadeOut: 1 },
         stopAudio: {id,type:'stopAudio',channel:'sound',fadeOut:0},
@@ -708,7 +720,7 @@ export const useProjectStore = create((set, get) => ({
       const index=scene.actions.findIndex(a=>a.id===afterId);
       if(index>=0&&!scene.timelineEnabled)scene.actions.splice(index+1,0,base);else scene.actions.push(base);
     });
-    set({ activeActionId: id, activeLayerId: null, inspectorTab: "properties" });
+    set({ activeActionId: id, activeLayerId: null, motionTime:null,inspectorTab: "properties" });
     return id;
   },
 

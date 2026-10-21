@@ -3,7 +3,7 @@
 export function visualLayerEdits(layer, patch) {
   const grouped = new Map();
   for (const [key, value] of Object.entries(patch)) {
-    const actionId = key === 'spriteId' ? layer.spriteActionId ?? layer.sourceActionId
+    const actionId = key !== 'spriteId'&&layer.motionActionId?(['x','y'].includes(key)&&layer.transformActionId?layer.transformActionId:layer.motionActionId):key === 'spriteId' ? layer.spriteActionId ?? layer.sourceActionId
       : ['x','y'].includes(key) ? layer.transformActionId ?? layer.sourceActionId : layer.sourceActionId;
     if (!grouped.has(actionId)) grouped.set(actionId, {});
     grouped.get(actionId)[key] = key==='scale'?value/(layer.animationScaleMultiplier??1):value;

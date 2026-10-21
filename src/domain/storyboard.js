@@ -2,12 +2,15 @@
 import {backgroundSource} from '../../runtime/background-transform.mjs';
 import {animationEnd,animationPlan} from '../../runtime/character-animation.mjs';
 import {sceneCharacterLayers,shownCharacterLayer} from '../../runtime/visual-order.mjs';
-export function storyboardFrames(project, scene) {
-  let frame={background:backgroundSource(project,scene),backgroundTransform:scene.backgroundTransform,backgroundActionId:null,layers:sceneCharacterLayers(scene),text:null,choice:null,cg:null};
+import {sceneImages} from '../../runtime/image-layers.mjs';
+import {applyMotion,cameraPose,motionDuration} from '../../runtime/keyframes.mjs';
+export function storyboardFrames(project, scene, sample) {
+  let frame={camera:cameraPose(),images:sceneImages(scene),background:backgroundSource(project,scene),backgroundTransform:scene.backgroundTransform,backgroundActionId:null,layers:sceneCharacterLayers(scene),text:null,choice:null,cg:null};
   return scene.actions.map((action,index)=>{
-    frame={...frame,layers:frame.layers.map(layer=>({...layer})),choice:null,exploration:null};
+    frame={...frame,images:frame.images.map(layer=>({...layer})),layers:frame.layers.map(layer=>({...layer})),choice:null,exploration:null};
+    if(action.type==='keyframes')applyMotion(frame,action,sample?.actionId===action.id?sample.time:motionDuration(action));
     const resource=project.resources.find(r=>r.id===action.assetId);
-    if(action.type==='background'){frame.background=resource?.source??null;frame.backgroundTransform=action.backgroundTransform;frame.backgroundActionId=action.id;if(action.preserveCharacters!==true){frame.layers=[];frame.cg=null;}}
+    if(action.type==='background'){frame.background=resource?.source??null;frame.backgroundTransform=action.backgroundTransform;frame.backgroundActionId=action.id;frame.backgroundMotionId=null;if(action.preserveCharacters!==true){frame.layers=[];frame.cg=null;}}
     if(action.type==='showCG')frame.cg=resource?.source??null;
     if(action.type==='hideCG')frame.cg=null;
     if(['dialogue','narration'].includes(action.type))frame.text=action;

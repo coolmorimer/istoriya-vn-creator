@@ -1,6 +1,8 @@
 import {conditionReferences,effectKind} from './game-logic.mjs';
 export function logicReferences(project,kind,id){
  const uses=[],effectUses=e=>kind==='item'?effectKind(e)==='inventory'&&e.itemId===id:kind==='flag'?effectKind(e)==='flag'&&e.flagId===id:effectKind(e)==='variable'&&e.variableId===id;
+ if(kind==='item'){for(const recipe of project.rpg?.recipes??[])if([...(recipe.ingredients??[]),...(recipe.results??[])].some(i=>i.itemId===id))uses.push({rpg:true,label:`Рецепт «${recipe.name}»`});for(const actor of project.rpg?.actors??[])if(actor.loot?.some(i=>i.itemId===id))uses.push({rpg:true,label:`Добыча «${actor.name}»`});}
+ for(const location of project.rpg?.locations??[])if(conditionReferences(location.condition,kind,id))uses.push({rpg:true,label:`Условия локации «${location.name}»`});
  for(const scene of Object.values(project.scenes??{})){
   for(const action of scene.actions??[]){
    const direct=kind==='item'?action.requiredItemId===id:kind==='flag'?action.requiredFlagId===id||action.type==='flag'&&action.flagId===id:action.type==='variable'&&action.variableId===id;

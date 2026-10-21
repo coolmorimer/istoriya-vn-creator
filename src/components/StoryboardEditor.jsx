@@ -8,11 +8,12 @@ import {backgroundStyle} from '../../runtime/background-transform.mjs';
 import {sceneImages,imageLayerStyle} from '../../runtime/image-layers.mjs';
 import {BackgroundPicker} from './BackgroundPicker.jsx';
 import {scenePaintOrder} from '../../runtime/visual-order.mjs';
+import {cameraStyle} from '../../runtime/keyframes.mjs';
 
 function StoryboardThumbnail({project,scene,frame,index}) {
- const images=sceneImages(scene),order=scenePaintOrder(scene,frame.layers,images,frame.backgroundActionId);
+ const images=frame.images??sceneImages(scene),order=scenePaintOrder(scene,frame.layers,images,frame.backgroundActionId);
  return <div className="storyboard-thumbnail">
-   <div className="visual-scene-objects">
+   <div className="visual-scene-objects" style={cameraStyle(frame.camera)}>
      <div className="scene-background-clip" style={{zIndex:order.background}}>{frame.background&&<img src={frame.background} style={backgroundStyle(frame.backgroundTransform)} alt="" loading="lazy"/>}</div>
      {frame.layers.filter(l=>l.visible!==false).map(layer=>{const source=resolveCharacterSprite(project.characters.find(c=>c.id===layer.characterId),layer.spriteId,project.resources).source;return source&&<img key={layer.id} className="storyboard-actor" src={source} alt="" loading="lazy" style={{left:`${layer.x}%`,top:`${layer.y}%`,opacity:(layer.opacity??100)/100,zIndex:order.characters.get(layer.characterId),transform:`translate(-50%,-100%) rotate(${layer.rotation??0}deg) scale(${(layer.flip?-1:1)*(layer.scale??100)/100},${(layer.scale??100)/100})`}}/>;})}
      {images.filter(layer=>layer.visible).map(layer=>{const resource=project.resources.find(r=>r.id===layer.resourceId);return resource?.source&&<img key={layer.id} className="storyboard-prop" style={{...imageLayerStyle(layer),zIndex:order.images.get(layer.id)}} src={resource.source} alt=""/>;})}

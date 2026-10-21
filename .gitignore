@@ -8,7 +8,9 @@ output/
 *.keystore
 *.jks
 *.vnproject
-!examples/tea-with-goblins/*.vnproject
+# Generated portable examples are distributed as GitHub Release assets.
+# The small legacy text example already tracked by Git remains tracked.
+design-qa.md
 .env
 .env.*
 !.env.example
