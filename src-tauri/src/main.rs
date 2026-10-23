@@ -221,6 +221,17 @@ fn main(){
           if let Err(error)=&opened{diagnostics.record("startup",0,&Err(error.to_string()));}
           let mut workspace=opened?;
           workspace.set_public_assets(runtime.join("public"));
+          if profile.boot_error.is_none(){
+            let preview_root=profile.workspace.clone();
+            let preview_diagnostics=diagnostics.clone();
+            // Auxiliary cache housekeeping must not hold the author-save mutex
+            // or make a readable library unavailable if cache validation fails.
+            let _=std::thread::Builder::new().name("preview-recovery".into()).spawn(move||{
+              let started=std::time::Instant::now();
+              let result=engine::reap_abandoned(&preview_root).map(|n|json!({"removed":n}));
+              preview_diagnostics.record("preview-cleanup",started.elapsed().as_millis().min(u64::MAX as u128) as u64,&result);
+            });
+          }
           app.manage(Backend{workspace:Arc::new(Mutex::new(workspace)),runtime,qa_root:qa.as_ref().map(|qa|qa.root.clone()),diagnostics,profile:profile.clone(),compilers:Arc::new(std::sync::atomic::AtomicUsize::new(0))});
           let window=tauri::WebviewWindowBuilder::from_config(app,&app.config().app.windows[0])?.data_directory(profile.webview.clone());
           if qa.is_some(){window.title("История · QA (изолированный профиль)").build()?;}else{window.build()?;}

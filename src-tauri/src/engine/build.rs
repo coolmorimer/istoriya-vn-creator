@@ -1,4 +1,4 @@
-use super::process;
+use super::{process, preview};
 use serde_json::{json, Value};
 use std::{ffi::OsStr, fs, io, path::{Path, PathBuf}, process::{Command, Stdio}, time::Duration};
 
@@ -203,40 +203,46 @@ fn android_keys(tools: &Tools, job: &Path, work: &Path, project: &Value) -> Resu
     Ok((key_dir, generated))
 }
 
+enum WorkJob { Build(tempfile::TempDir), Preview(preview::Lease) }
+impl WorkJob {
+    fn path(&self) -> PathBuf { match self { Self::Build(temp) => temp.path().into(), Self::Preview(lease) => lease.path() } }
+}
+
 pub fn execute(runtime: &Path, root: &Path, operation: &str, payload: &Value, output: &Path) -> Result<Value, String> {
     if !matches!(operation, "build" | "preview") { return Err("Неизвестная операция движка.".into()); }
     let project = &payload["project"]; crate::storage::validate(project)?;
     let target = Target::parse(payload["platform"].as_str().unwrap_or("windows"))?;
     let tools = Tools::new(dunce::simplified(runtime), dunce::simplified(root))?;
-    let job = tempfile::Builder::new().prefix("engine-").tempdir_in(&tools.root).map_err(|e| e.to_string())?;
+    let job = if operation == "preview" { WorkJob::Preview(preview::Lease::new(&tools.root)?) }
+        else { WorkJob::Build(tempfile::Builder::new().prefix("engine-").tempdir_in(&tools.root).map_err(|e| e.to_string())?) };
     let work = job.path().join("game-project"); fs::create_dir_all(&work).map_err(|e| e.to_string())?;
-    let gui = prepare_gui(&tools, job.path(), &work, project)?;
-    compile_sources(&tools, job.path(), &work, project, payload, gui)?;
+    let gui = prepare_gui(&tools, &job.path(), &work, project)?;
+    compile_sources(&tools, &job.path(), &work, project, payload, gui)?;
     let saves = job.path().join("sdk-saves");
     let mut lint = tools.sdk_command(&saves); lint.arg(&work).arg("lint");
-    process::run(&mut lint, job.path(), "Проверка игры", TOOL_TIMEOUT)?;
+    process::run(&mut lint, &job.path(), "Проверка игры", TOOL_TIMEOUT)?;
     if operation == "preview" {
         let mut command = tools.sdk_command(&saves);
         preview_save_environment(&mut command, std::env::var_os("RENPY_PATH_TO_SAVES").as_deref());
         command.arg(&work).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
         process::hidden(&mut command);
-        let mut child = command.spawn().map_err(|e| format!("Не удалось запустить игру: {e}"))?;
-        let pid = child.id();
-        // Reap the detached game after it closes without keeping the RPC busy.
-        std::thread::spawn(move || { let _ = child.wait(); });
-        let _retained = job.keep();
-        return Ok(json!({"projectDir":work,"sceneId":payload["sceneId"],"processId":pid,"engine":{"orchestrator":"rust","sourceEmitter":"javascript"}}));
+        let WorkJob::Preview(lease) = job else { return Err("Не удалось зарегистрировать предпросмотр.".into()); };
+        let mut result = preview::launch(command, lease)?;
+        result["projectDir"] = json!(work);
+        result["sceneId"] = payload["sceneId"].clone();
+        result["engine"] = json!({"orchestrator":"rust","sourceEmitter":"javascript","previewLifetime":"rust"});
+        return Ok(result);
     }
     let packages = job.path().join("packages"); fs::create_dir_all(&packages).map_err(|e| e.to_string())?;
     let bundle = project["meta"]["android"]["buildFormat"].as_str() == Some("aab");
     let mut key_info = None;
-    if target == Target::Android { key_info = Some(android_keys(&tools, job.path(), &work, project)?); }
+    if target == Target::Android { key_info = Some(android_keys(&tools, &job.path(), &work, project)?); }
     let mut command = tools.sdk_command(&saves);
     command.arg("launcher").arg(if target == Target::Android { "android_build" } else { "distribute" })
         .arg(&work).arg("--destination").arg(&packages);
     if target == Target::Android { if bundle { command.arg("--bundle"); } }
     else { command.arg("--package").arg(target.package()).arg("--no-update"); }
-    process::run(&mut command, job.path(), "Упаковка игры", TOOL_TIMEOUT)?;
+    process::run(&mut command, &job.path(), "Упаковка игры", TOOL_TIMEOUT)?;
     let mut candidates = Vec::new(); package_candidates(&packages, target.suffix(bundle), &mut candidates, 0)?;
     if candidates.len() != 1 { return Err(format!("Компонент сборки должен создать один пакет, найдено: {}. Прежние файлы в папке назначения не использованы.", candidates.len())); }
     let package = publish_package(&candidates[0], output)?;

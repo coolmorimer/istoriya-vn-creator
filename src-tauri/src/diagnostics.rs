@@ -6,7 +6,7 @@ use sha2::{Digest,Sha256};
 
 const FILE_BYTES:u64=256*1024;
 const EVENTS:usize=64;
-const OPERATIONS:&[&str]=&["load","flush","folder","create","open","export","portable","audit-media","backup","backup-raw","build","preview","confirm-close","startup","shutdown","panic","renderer","copy-diagnostics","open-logs","profile-choose","profile-start","profile-cancel","profile-rollback","profile-restart","profile-ui-ack"];
+const OPERATIONS:&[&str]=&["load","flush","folder","create","open","export","portable","audit-media","backup","backup-raw","build","preview","preview-cleanup","confirm-close","startup","shutdown","panic","renderer","copy-diagnostics","open-logs","profile-choose","profile-start","profile-cancel","profile-rollback","profile-restart","profile-ui-ack"];
 fn now()->u64{SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis().min(u64::MAX as u128) as u64}
 fn fingerprint(message:&str)->String{format!("{:x}",Sha256::digest(message.as_bytes()))}
 fn category(message:&str)->&'static str{

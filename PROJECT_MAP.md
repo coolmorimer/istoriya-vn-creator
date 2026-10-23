@@ -12,6 +12,7 @@
 | --- | --- |
 | `src-tauri/` | Основная нативная оболочка Rust/Tauri, файлы, диалоги, окно и запуск компилятора |
 | `src-tauri/src/engine/build.rs`, `process.rs` | Rust-конвейер build/preview: официальный GUI, контроль SDK-процессов, traceback/timeout, изолированный пакет и сохранение без перезаписи |
+| `src-tauri/src/engine/preview.rs`, `preview_tests.rs` | Жизненный цикл отдельного preview, собственный кэш/регистрация, проверка процесса и резерв локальных игровых сохранений |
 | `scripts/verify-rust-engine.mjs`, `tests/native-emitter.test.mjs` | Реальная EXE-проверка при отключённом старом Node-сборщике и контракт оставшегося генератора исходников |
 | `src-tauri/src/diagnostics.rs`, `diagnostics_system.rs`, `src/platform/diagnostics.js`, `src/components/Diagnostics.jsx` | Ограниченный локальный журнал, безопасный отчёт, Win32 clipboard/папка, явные QA receipts, независимость от project/error boundary |
 | `src/domain/dialogFocus.js`, `tests/diagnostics.test.mjs`, `scripts/verify-native-diagnostics.mjs` | Реальная видимость закрытых details, async-focus, приватность/очередь и native-доказательства отказов/перезапуска |
