@@ -40,7 +40,8 @@ try {
     $existing=gh release list --repo $repo --limit 100 --json tagName
     if($LASTEXITCODE){throw 'Cannot inspect existing releases'}
     if(@(($existing | ConvertFrom-Json) | Where-Object tagName -eq $tag).Count){throw 'Release exists; inspect before retry'}
-    gh release create $tag --repo $repo --verify-tag --draft --prerelease --latest=false --title "История $version бета — Rust ядро документа" --notes-file "docs/releases/$version.md"
+    $headline=if($version -eq '0.2.38'){'Rust переходы и сцены вне глав'}else{'Rust ядро документа'}
+    gh release create $tag --repo $repo --verify-tag --draft --prerelease --latest=false --title "История $version бета — $headline" --notes-file "docs/releases/$version.md"
     if($LASTEXITCODE){throw 'Create outcome uncertain; inspect before retry'}
   }
   $release=Read-Release
