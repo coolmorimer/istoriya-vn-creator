@@ -1,4 +1,4 @@
-param(
+﻿param(
   [ValidateSet('Status','Create','Upload','Verify','Publish')][string]$Mode='Status',
   [Parameter(Mandatory=$true)][string]$Directory
 )
