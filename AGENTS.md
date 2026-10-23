@@ -1,5 +1,9 @@
 # Production editor instructions
 
+## Publication direction — current request
+
+- The owner explicitly requests commit/push of all intended source changes and a release installer with repository structure, description and instructions. Publish 0.2.35 as a beta from the verified Rust-orchestration milestone; this supersedes the development iteration's no-automatic-publication restriction only for this requested release. Keep 0.2.34 immutable. Never publish owner projects, credentials, raw QA profiles or design-qa.md; never claim the transitional compiler/runtime is a completed Rust engine.
+
 ## Rust engine completion direction — 2026-10-23
 
 - The active goal is the full previously specified no-code novel engine, not another narrower beta. Move native engine/orchestration, project model, validation and compiler responsibilities to Rust with executable parity checks. The final own game runtime is also Rust, not merely a Rust shell emitting Python; retain Ren'Py export/game compatibility for old projects and saves. Preserve the entire requirements matrix, layered authoring, RPG, camera, keyframes, UI customization and independent saves. React remains the no-code editor UI; do not call transitional JS emission or Ren'Py-only playback a finished Rust engine.

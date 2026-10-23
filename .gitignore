@@ -1,6 +1,9 @@
 node_modules/
 dist/
 release*/
+# Public release notes belong to source control, unlike generated release folders.
+!docs/releases/
+!docs/releases/**
 .artifacts/
 output/
 .playwright*/
