@@ -1,6 +1,6 @@
 import { timelineEvents } from "../../runtime/timeline-model.mjs";
 const actionsFor = scene => scene?.timelineEnabled ? timelineEvents(scene) : scene?.actions ?? [];
-import { resolveStoryProject, targetScene } from "../../runtime/story-routing.mjs";
+import { resolveStoryProject, targetScene, orderedStoryScenes } from "../../runtime/story-routing.mjs";
 import {backgroundTransform,backgroundSource} from '../../runtime/background-transform.mjs';
 import {animationSettings,animationEnd} from '../../runtime/character-animation.mjs';
 import {sceneCharacterLayers,shownCharacterLayer} from '../../runtime/visual-order.mjs';
@@ -76,7 +76,7 @@ export function advancePreview(project, previous, optionId) {
     for (const effect of option.effects ?? []) changeValue(effect,state,project);
     enter(targetScene(project, option));
   } else if (state.waiting) { if(state.waiting.timelineTextEnd)state.displayText=null; if(['dialogue','narration'].includes(state.waiting.type))stopPreviewAudio(state,'voice'); state.index++; state.waiting = null; }
-  const order = project.chapters.flatMap((c) => c.scenes);
+  const order = orderedStoryScenes(project);
   for (let count = 0; count < 1000 && !state.ended; count++) {
     const scene = project.scenes[state.sceneId];
     const action = actionsFor(scene)[state.index];

@@ -4,6 +4,7 @@
 mod document;
 mod motion_shape;
 mod structure;
+mod story;
 mod ui_shape;
 
 pub use document::{
@@ -11,3 +12,4 @@ pub use document::{
     SceneView, SchemaVersion,
 };
 pub const STRUCTURE_PROTOCOL: u32 = 1;
+pub use story::{Destination, StoryPlan, Transition, STORY_PROTOCOL};

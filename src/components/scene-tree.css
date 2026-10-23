@@ -4,7 +4,8 @@
 .tree-virtual-row {position:absolute;left:0;right:0;min-width:0;}
 .tree-virtual-row.tree-cursor {box-shadow:inset 0 0 0 1px #8c6ca4;border-radius:5px;}
 .tree-virtual-row .chapter-row {height:36px;grid-template-columns:20px minmax(0,1fr) repeat(4,20px);}
-.tree-virtual-row .chapter-row>input {font-size:11px;color:#c9bfd5;}
+.tree-virtual-row .chapter-row>input,.tree-virtual-row .chapter-row>.tree-unassigned-label {font-size:11px;color:#c9bfd5;}
+.tree-unassigned-label {grid-column:2/-1;}
 .tree-virtual-row .chapter-row>button {color:#b5a4c6;}
 .tree-virtual-row .chapter-row>button:nth-of-type(n+2) {visibility:hidden;}
 .tree-virtual-row:hover .chapter-row>button,.tree-virtual-row:focus-within .chapter-row>button {visibility:visible;}

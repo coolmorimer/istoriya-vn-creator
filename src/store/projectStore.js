@@ -21,6 +21,7 @@ import {clearUiResource} from '../../runtime/game-ui.mjs';
 import {editorNavigation} from '../domain/editorNavigation.js';
 import {MOTION_FIELDS,motionDuration} from '../../runtime/keyframes.mjs';
 import {defaultRpg} from '../../runtime/rpg-model.mjs';
+import {sceneTreeGroups} from '../domain/sceneTree.js';
 
 const STORAGE_KEY = "istoriya-project-v2";
 const LIBRARY_KEY = "istoriya-project-library-v1";
@@ -106,7 +107,8 @@ export function normalizeProject(source) {
   const placed = new Set();
   for (const chapter of project.chapters) chapter.scenes = (chapter.scenes ?? []).filter((id) => { if (!project.scenes[id] || placed.has(id)) return false; placed.add(id); return true; });
   if (!project.chapters.length) project.chapters.push({ id: createId("chapter"), title: "Глава 1", scenes: [] });
-  for (const id of Object.keys(project.scenes)) if (!placed.has(id)) project.chapters[0].scenes.push(id);
+  // Unassigned scenes are real author data, not corruption. Keep their
+  // membership unchanged; the tree exposes a derived, non-authoring group.
   for (const scene of Object.values(project.scenes)) {
     scene.actions = (Array.isArray(scene.actions) ? scene.actions : []).map((action) => ({
       ...action,
@@ -632,13 +634,16 @@ export const useProjectStore = create((set, get) => ({
   removeExit: (edge) => withHistory(set, (project) => removeExit(project, edge)),
   moveSceneToChapter: (sceneId, chapterId) => withHistory(set, (project) => {
     const target = project.chapters.find((chapter) => chapter.id === chapterId);
-    if (!target || !project.scenes[sceneId]) return;
-    for (const chapter of project.chapters) chapter.scenes = chapter.scenes.filter((id) => id !== sceneId);
-    target.scenes.push(sceneId); renumberScenes(project);
+    if ((chapterId&&!target) || !project.scenes[sceneId]) return;
+    for (const chapter of project.chapters) {
+      chapter.scenes = chapter.scenes.filter((id) => id !== sceneId);
+      if(chapter.entrySceneId===sceneId&&chapter.id!==target?.id)chapter.entrySceneId=null;
+    }
+    if(target)target.scenes.push(sceneId); renumberScenes(project);
   }),
   arrangeMap: () => withHistory(set, (project) => {
     let row = 0;
-    for (const chapter of project.chapters) {
+    for (const {chapter} of sceneTreeGroups(project)) {
       const lanes = [...new Set(chapter.scenes.map(id=>project.scenes[id]?.storyline || chapter.storyline || 'Основная линия'))];
       for(const lane of lanes) {
         const ids=chapter.scenes.filter(id=>(project.scenes[id]?.storyline || chapter.storyline || 'Основная линия')===lane);

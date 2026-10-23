@@ -60,11 +60,17 @@ test('native emitter verifies exact document bytes and does not read a project s
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'istoriya-emitter-integrity-'));
   try{
     const project=fixture(),body=Buffer.from(JSON.stringify(project)),request=path.join(root,'request.json'),response=path.join(root,'response.json'),document=path.join(root,'document.json');
+    const id=Object.keys(project.scenes)[0],story=Buffer.from(JSON.stringify({protocol:1,startSceneId:id,startActionId:null,sceneOrder:[id],nextScene:{[id]:null},chapterEntries:{},transitions:[]}));
     const envelope={operation:'compile',project:{scenes:null},destination:path.join(root,'generated'),options:{preparedGui,sdkPath:path.join(root,'missing-sdk'),assetsRoot:path.resolve('public')},validatedDocument:{source:'istoriya-core',structureProtocol:1,schema:8,bytes:body.length,sha256:createHash('sha256').update(body).digest('hex')}};
-    await fs.writeFile(request,JSON.stringify(envelope));await fs.writeFile(document,body);
+    envelope.validatedDocument.storyPlan={protocol:1,bytes:story.length,sha256:createHash('sha256').update(story).digest('hex')};
+    await fs.writeFile(path.join(root,'story-plan.json'),story);await fs.writeFile(request,JSON.stringify(envelope));await fs.writeFile(document,body);
     let child=spawnSync(process.execPath,['runtime/native-worker.mjs',request,response],{encoding:'utf8',timeout:10000,windowsHide:true});assert.equal(child.status,0,child.stderr);assert.ok(JSON.parse(await fs.readFile(response,'utf8')).result);
     await fs.writeFile(document,Buffer.concat([body,Buffer.from(' ')]));
     child=spawnSync(process.execPath,['runtime/native-worker.mjs',request,response],{encoding:'utf8',timeout:10000,windowsHide:true});assert.equal(child.status,1);assert.match(JSON.parse(await fs.readFile(response,'utf8')).error,/повреждён при передаче/);
+    await fs.writeFile(document,body);await fs.writeFile(path.join(root,'story-plan.json'),Buffer.from(story.toString().replace('"protocol":1','"protocol":2')));
+    child=spawnSync(process.execPath,['runtime/native-worker.mjs',request,response],{encoding:'utf8',timeout:10000,windowsHide:true});assert.equal(child.status,1);assert.match(JSON.parse(await fs.readFile(response,'utf8')).error,/План переходов Rust повреждён при передаче/);
+    delete envelope.validatedDocument.storyPlan;await fs.writeFile(request,JSON.stringify(envelope));
+    child=spawnSync(process.execPath,['runtime/native-worker.mjs',request,response],{encoding:'utf8',timeout:10000,windowsHide:true});assert.equal(child.status,1);assert.match(JSON.parse(await fs.readFile(response,'utf8')).error,/Нет плана переходов Rust/);
     const sameSize=Buffer.from(body.toString().replace('"schemaVersion":8','"schemaVersion":7'));assert.equal(sameSize.length,body.length);assert.notDeepEqual(sameSize,body);await fs.writeFile(document,sameSize);
     child=spawnSync(process.execPath,['runtime/native-worker.mjs',request,response],{encoding:'utf8',timeout:10000,windowsHide:true});assert.equal(child.status,1);assert.match(JSON.parse(await fs.readFile(response,'utf8')).error,/повреждён при передаче/);
   }finally{await fs.rm(root,{recursive:true,force:true});}

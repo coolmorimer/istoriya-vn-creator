@@ -24,6 +24,8 @@ await fs.writeFile(path.join(runtime,'runtime/builder.mjs'),"throw Error('QA: le
 await fs.copyFile(path.join(runtime,'runtime/gui-template.mjs'),path.join(runtime,'runtime/gui-template-real.mjs'));
 await fs.writeFile(path.join(runtime,'runtime/gui-template.mjs'),"export {validateGameGui} from './gui-template-real.mjs';\nexport async function generateGameGui(){throw Error('QA: Node must not launch SDK GUI generation');}\n");
 await fs.writeFile(path.join(runtime,'runtime/project-format.mjs'),"export function assertProjectShape(){throw Error('QA: JS must not perform native structural preflight');}\n");
+await fs.copyFile(path.join(runtime,'runtime/story-routing.mjs'),path.join(runtime,'runtime/story-routing-real.mjs'));
+await fs.writeFile(path.join(runtime,'runtime/story-routing.mjs'),"export {storyActions,orderedStoryScenes,storyStartScene} from './story-routing-real.mjs';\nexport function resolveStoryProject(){throw Error('QA: native export must consume the Rust story plan');}\n");
 await fs.copyFile(path.join(runtime,'runtime/native-worker.mjs'),path.join(runtime,'runtime/source-emitter-real.mjs'));
 const operations=path.join(root,'emitter-operations.jsonl');
 const tamperMarker=path.join(root,'tamper-next-document');
@@ -46,6 +48,7 @@ await command('native-first',exe,['--verify-native',fixture,output]);
 const first=(await json(path.join(output,'result.json'))).build;
 assert.equal(first.engine.orchestrator,'rust');assert.equal(first.engine.sourceEmitter,'javascript');
 assert.equal(first.engine.projectModel,'rust');assert.equal(first.engine.structureValidator,'rust');assert.equal(first.engine.document.scenes,3);
+assert.equal(first.engine.storyPlanner,'rust');assert.equal(first.engine.storyStart,scene.id);
 assert.notEqual(path.resolve(first.packagePath),stale);const firstDigest=await digest(first.packagePath);
 await command('native-repeat',exe,['--verify-native',fixture,output]);
 const second=(await json(path.join(output,'result.json'))).build;
@@ -58,6 +61,11 @@ assert.match(await fs.readFile(path.join(output,'error.txt'),'utf8'),/У дей�
 assert.deepEqual(await fs.readdir(packages),before);assert.equal(await digest(first.packagePath),firstDigest);
 let emitted=(await fs.readFile(operations,'utf8')).trim().split('\n').map(JSON.parse);
 assert.equal(emitted.length,2,'Invalid structure must fail in Rust before source emission');
+const brokenRoute=structuredClone(project);Object.values(brokenRoute.scenes)[0].actions[1].options[0].targetChapterId='missing-chapter';
+const routeFile=path.join(root,'broken-route.vnproject');await fs.writeFile(routeFile,JSON.stringify(brokenRoute));
+await command('native-invalid-route',exe,['--verify-native',routeFile,output],1);
+assert.match(await fs.readFile(path.join(output,'error.txt'),'utf8'),/Глава перехода удалена/);assert.deepEqual(await fs.readdir(packages),before);
+assert.equal((await fs.readFile(operations,'utf8')).trim().split('\n').length,2,'Invalid route must fail in Rust before emitter/SDK');
 await fs.writeFile(tamperMarker,'Corrupt only own next staged QA document');
 await command('native-corrupt-transport',exe,['--verify-native',fixture,output],1);
 assert.match(await fs.readFile(path.join(output,'error.txt'),'utf8'),/повреждён при передаче/);assert.deepEqual(await fs.readdir(packages),before);assert.equal(await digest(first.packagePath),firstDigest);
@@ -95,7 +103,7 @@ for(const startup of [false,true]){
   const directory=result.split(/\r?\n/).find(l=>l.startsWith('Runtime QA: '))?.slice(12);assert.ok(directory);
   const checked=await json(path.join(directory,'result.json'));assert.equal(checked.passed,true);assert.equal(checked.runtimeException,false);games.push(checked);
 }
-const report={passed:true,version:JSON.parse(await fs.readFile('package.json','utf8')).version,root,executableSha256:await digest(exe),legacyNodeBuilderDisabled:true,nodeGuiGeneratorDisabled:true,legacyJsStructureValidatorDisabled:true,invalidRejectedBeforeSourceEmitter:true,sameLengthTransportDamageRejected:true,sourceEmitterOperations:emitted,stalePackageRejected:true,existingPackagePreserved:true,invalidProjectRejected:true,first,second,games,ownerProfileChanged:false,osMouseAutomation:false,androidVerified:false,fullRustCompiler:false,fullProductionAccepted:false};
+const report={passed:true,version:JSON.parse(await fs.readFile('package.json','utf8')).version,root,executableSha256:await digest(exe),legacyNodeBuilderDisabled:true,nodeGuiGeneratorDisabled:true,legacyJsStructureValidatorDisabled:true,legacyJsStoryResolverDisabled:true,invalidRouteRejectedBeforeSourceEmitter:true,invalidRejectedBeforeSourceEmitter:true,sameLengthTransportDamageRejected:true,sourceEmitterOperations:emitted,stalePackageRejected:true,existingPackagePreserved:true,invalidProjectRejected:true,first,second,games,ownerProfileChanged:false,osMouseAutomation:false,androidVerified:false,fullRustCompiler:false,fullProductionAccepted:false};
 await fs.writeFile(path.join(root,'rust-engine-report.json'),JSON.stringify(report,null,2));
 await fs.writeFile('.artifacts/rust-engine-location.json',JSON.stringify({root,reportPath:path.join(root,'rust-engine-report.json')},null,2));
 console.log(JSON.stringify({passed:true,root,sourceEmitterOperations:emitted.length,scope:'Actual Rust EXE pipeline; Windows package and game; not full Rust compiler or production acceptance'}));

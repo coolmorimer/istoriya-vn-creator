@@ -1,10 +1,11 @@
 import {sceneOrder,sceneExits} from './storyGraph.js';
 import {routeGraphEdges} from './edgeRouting.js';
+import {storyStartScene} from '../../runtime/story-routing.mjs';
 export const MAP_NODE={width:230,height:126};
 export function sceneMapIndex(project){
  const order=sceneOrder(project),owners=new Map(),exits=new Map(),edges=[];
  for(const chapter of project.chapters)for(const id of chapter.scenes)if(!owners.has(id))owners.set(id,chapter);
- order.forEach((id,index)=>{const list=sceneExits(project,id,{nextSceneId:order[index+1]});exits.set(id,list);edges.push(...list);});return {order,owners,exits,edges};
+ order.forEach((id,index)=>{const list=sceneExits(project,id,{nextSceneId:order[index+1]});exits.set(id,list);edges.push(...list);});return {order,owners,exits,edges,startSceneId:storyStartScene(project)};
 }
 export function sceneMapPositions(project,ids,drag){return Object.fromEntries(ids.map((id,index)=>{const p=drag?.id===id?drag.position:project.scenes[id].mapPosition;return [id,Number.isFinite(p?.x)&&Number.isFinite(p?.y)?p:{x:50+index%3*300,y:50+Math.floor(index/3)*200}];}));}
 export function graphView(bounds,scale,overscan=160){const zoom=Number.isFinite(scale)&&scale>0?scale:1;return {left:(bounds.left-overscan)/zoom,top:(bounds.top-overscan)/zoom,right:(bounds.left+bounds.width+overscan)/zoom,bottom:(bounds.top+bounds.height+overscan)/zoom};}

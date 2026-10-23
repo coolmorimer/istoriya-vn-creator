@@ -12,6 +12,8 @@
 | --- | --- |
 | `crates/istoriya-core/` | Независимое Rust-ядро без Tauri/Node: заимствованный документ, типизированные представления, структурная диагностика schema 1–8, UI и ключевых кадров; исходные поля не переписываются |
 | `tests/fixtures/document-corpus.mjs`, `scripts/verify-document-parity.mjs` | Общий корпус из 1320 документов и исполняемое сравнение Rust с прежним JS-валидатором, сохранность принятого JSON и точные адреса ошибок |
+| `crates/istoriya-core/src/story.rs`, `runtime/native-story-plan.mjs` | Rust-план переходов, типизированные назначения сцен/глав, проверка ссылок и применение плана генератором без глубокого клонирования медиа |
+| `runtime/story-routing.mjs`, `scripts/verify-story-parity.mjs`, `scripts/verify-story-runtime.mjs` | Общий порядок карты/preview/экспорта, корпус 424 проектов и фактическая проверка переходов в готовой Windows-игре |
 | `src-tauri/` | Основная нативная оболочка Rust/Tauri, файлы, диалоги, окно и запуск компилятора |
 | `src-tauri/src/engine/build.rs`, `process.rs` | Rust-конвейер build/preview: официальный GUI, контроль SDK-процессов, traceback/timeout, изолированный пакет и сохранение без перезаписи |
 | `src-tauri/src/engine/preview.rs`, `preview_tests.rs` | Жизненный цикл отдельного preview, собственный кэш/регистрация, проверка процесса и резерв локальных игровых сохранений |

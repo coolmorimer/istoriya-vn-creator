@@ -1,4 +1,4 @@
-import { resolveStoryProject, storyActions } from '../../runtime/story-routing.mjs';
+import { resolveStoryProject, storyActions, orderedStoryScenes, storyStartScene } from '../../runtime/story-routing.mjs';
 import { timelineConflicts } from '../../runtime/timeline-model.mjs';
 import { assertProjectShape } from '../../runtime/project-format.mjs';
 import {backgroundSource} from '../../runtime/background-transform.mjs';
@@ -15,9 +15,7 @@ function issue(severity, code, message, target = {}) {
 }
 
 function orderedSceneIds(project) {
-  const ids = (project.chapters ?? []).flatMap((chapter) => chapter.scenes ?? []).filter((id) => project.scenes?.[id]);
-  for (const id of Object.keys(project.scenes ?? {})) if (!ids.includes(id)) ids.push(id);
-  return ids;
+  return orderedStoryScenes(project);
 }
 
 function actionTargets(action) {
@@ -143,7 +141,8 @@ export function validateProject(project) {
   });
 
   const reachable = new Set();
-  const queue = sceneIds.length ? [sceneIds[0]] : [];
+  const start=storyStartScene(project);
+  const queue = start ? [start] : [];
   while (queue.length) {
     const current = queue.shift();
     if (reachable.has(current)) continue;

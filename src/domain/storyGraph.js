@@ -1,10 +1,10 @@
 import { createId } from "../data/defaultProject.js";
-import { targetScene, chapterEntry, storyActions } from "../../runtime/story-routing.mjs";
+import { targetScene, chapterEntry, storyActions, orderedStoryScenes } from "../../runtime/story-routing.mjs";
 import { timelineClips } from "../../runtime/timeline-model.mjs";
 import {resolveAuthorDestination} from './storyDestinations.js';
 
 export const isTerminal = (action) => ["jump", "choice", "condition", "end"].includes(action?.type);
-export const sceneOrder = (project) => [...new Set([...project.chapters.flatMap((chapter) => chapter.scenes), ...Object.keys(project.scenes)])].filter((id) => project.scenes[id]);
+export const sceneOrder = orderedStoryScenes;
 
 export function sceneExits(project, sceneId, navigation=null) {
   const scene = project.scenes[sceneId];

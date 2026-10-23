@@ -30,6 +30,8 @@ try {
       if($LASTEXITCODE){throw 'Rust core tests failed'}
       node scripts/verify-document-parity.mjs --use-native-target
       if($LASTEXITCODE){throw 'Rust/JS document parity failed'}
+      node scripts/verify-story-parity.mjs --use-native-target
+      if($LASTEXITCODE){throw 'Rust/JS story navigation parity failed'}
       & cargo test --release --locked --features tauri/custom-protocol --manifest-path src-tauri/Cargo.toml
     }else{& cargo check --locked --manifest-path src-tauri/Cargo.toml}
   } else {

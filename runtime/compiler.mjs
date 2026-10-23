@@ -16,7 +16,8 @@ import { textAppearance } from './text-style.mjs';
 import {motionDuration,motionSample,renpyMotionLines,motionWarperScript} from './keyframes.mjs';
 import fs from "node:fs/promises";
 import { timelineEvents } from "./timeline-model.mjs";
-import { resolveStoryProject, storyActions } from "./story-routing.mjs";
+import { resolveStoryProject, storyActions, orderedStoryScenes, storyStartScene } from "./story-routing.mjs";
+import {applyNativeStoryPlan} from './native-story-plan.mjs';
 import { assertProjectShape } from "./project-format.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -494,16 +495,18 @@ function usedResourceIds(project) {
   return ids;
 }
 
-function createScript(project, backgroundMap, assetMap = new Map(), spriteMap = new Map(), startSceneId = null, startActionId = null) {
-  project = resolveStoryProject(project);
-  const firstSceneId = project.scenes[startSceneId] ? startSceneId : project.chapters?.[0]?.scenes?.[0] ?? Object.keys(project.scenes)[0];
+function createScript(project, backgroundMap, assetMap = new Map(), spriteMap = new Map(), startSceneId = null, startActionId = null, nativeStoryPlan = null) {
+  const prepared=nativeStoryPlan?applyNativeStoryPlan(project,nativeStoryPlan):null;
+  project = prepared?.project??resolveStoryProject(project);
+  const firstSceneId = prepared?.startSceneId??storyStartScene(project,startSceneId);
+  if(prepared)startActionId=prepared.startActionId;
   const declarations = [`init python:\n    renpy.music.register_channel("ambience", mixer="sfx", loop=True)\n    renpy.add_layer("istoriya_cg_layer", above="master")\n    config.tag_layer["istoriya_cg"] = "istoriya_cg_layer"`, `define istoriya_narrator = Character(None, what_style="istoriya_narrator")`];
   const dialogueUi=gameUi(project).dialogue;
   for (const character of project.characters ?? []) {const imageTag=asciiId(character.id,'actor');declarations.push(`define ${asciiId(character.id, "character")} = Character(${quote(character.name)}, color=${quote(dialogueUi.enabled?dialogueUi.name.color:character.color || "#ffffff")}, image=${quote(imageTag)})`);const portrait=spriteMap.get(`${character.id}:portrait`)??spriteMap.get(`${character.id}:default`);if(portrait&&dialogueUi.enabled&&dialogueUi.portrait.visible)declarations.push(`image side ${imageTag} = ${quote(portrait)}`);}
   for (const variable of project.variables ?? []) declarations.push(`default ${asciiId(variable.id, "v")} = ${renpyLiteral(scalarValue(variable.type,variable.initial))}`);
   for (const flag of project.flags ?? []) declarations.push(`default ${asciiId(flag.id, "flag")} = ${scalarValue('boolean',flag.initial) ? "True" : "False"}`);
-  const orderedSceneIds = (project.chapters ?? []).flatMap((chapter) => chapter.scenes ?? []);
-  const nextSceneById = new Map(orderedSceneIds.map((sceneId, index) => [sceneId, orderedSceneIds[index + 1] ?? null]));
+  const orderedSceneIds = prepared?null:orderedStoryScenes(project);
+  const nextSceneById = prepared?new Map(Object.entries(prepared.nextScene)):new Map(orderedSceneIds.map((sceneId, index) => [sceneId, orderedSceneIds[index + 1] ?? null]));
   const scenes = Object.values(project.scenes).map((scene) => compileScene(scene, project, backgroundMap, nextSceneById.get(scene.id), assetMap, spriteMap));
   let entry = firstSceneId;
   const offset = project.scenes[firstSceneId]?.actions.findIndex((action) => action.id === startActionId) ?? -1;
@@ -559,11 +562,12 @@ export async function compileProject(project, destination, options) {
 
 // Separate entry point for the private native-worker protocol. The public API
 // cannot bypass validation through an options flag supplied by a caller.
-export async function compileRustValidatedProject(project, destination, options) {
-  return emitProject(project, destination, options);
+export async function compileRustValidatedProject(project, destination, options, storyPlan) {
+  if(!storyPlan)throw Error('Нет плана переходов Rust. Повторите сборку.');
+  return emitProject(project, destination, options, storyPlan);
 }
 
-async function emitProject(project, destination, options) {
+async function emitProject(project, destination, options, nativeStoryPlan = null) {
   const uiErrors=uiLayoutProblems(project);if(uiErrors.length)throw Error(uiErrors.map(e=>e.message).join(' '));
   if (!project?.meta || !project?.scenes) throw new Error("Файл проекта повреждён или имеет неизвестный формат.");
   if (!destination || path.resolve(destination) === path.parse(path.resolve(destination)).root) throw new Error("Небезопасная папка назначения.");
@@ -656,7 +660,7 @@ async function emitProject(project, destination, options) {
   const choiceButtonHoverPath = choiceButtonHover ? path.relative(gameDir, choiceButtonHover).split(path.sep).join("/") : null;
 
   await fs.writeFile(path.join(gameDir, "options.rpy"), createOptions(project, iconPath, cursorPath), "utf8");
-  await fs.writeFile(path.join(gameDir, "script.rpy"), createScript(project, backgroundMap, assetMap, spriteMap, options.startSceneId, options.startActionId), "utf8");
+  await fs.writeFile(path.join(gameDir, "script.rpy"), createScript(project, backgroundMap, assetMap, spriteMap, options.startSceneId, options.startActionId, nativeStoryPlan), "utf8");
   await fs.writeFile(path.join(gameDir, "theme.rpy"), createTheme(project, dialogueBackgroundPath, mainMenuBackgroundPath, choiceButtonPath, choiceButtonHoverPath), "utf8");
   await fs.writeFile(path.join(gameDir,'ui_custom.rpy'),gameUiScript(project,assetMap,{quote,dialogueBackgroundPath}),'utf8');
   await fs.writeFile(path.join(gameDir, "gallery.rpy"), createGallery(project, assetMap), "utf8");
