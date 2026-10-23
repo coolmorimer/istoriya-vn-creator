@@ -1,4 +1,6 @@
 use super::{process, preview};
+use istoriya_core::{ProjectDocument, STRUCTURE_PROTOCOL};
+use sha2::{Digest, Sha256};
 use serde_json::{json, Value};
 use std::{ffi::OsStr, fs, io, path::{Path, PathBuf}, process::{Command, Stdio}, time::Duration};
 
@@ -97,14 +99,21 @@ fn prepare_gui(tools: &Tools, job: &Path, work: &Path, project: &Value) -> Resul
     Ok(json!({"gui":gui,"screens":screens}))
 }
 
-fn compile_sources(tools: &Tools, job: &Path, work: &Path, project: &Value, payload: &Value, gui: Value) -> Result<(), String> {
+fn compile_sources(tools: &Tools, job: &Path, work: &Path, document: &ProjectDocument<'_>, payload: &Value, gui: Value) -> Result<(), String> {
     let request = job.join("request.json"); let response = job.join("response.json");
     let mut options = json!({"sdkPath": tools.sdk, "assetsRoot": tools.runtime.join("public"), "preparedGui":gui});
     for key in ["startSceneId", "startActionId"] {
         let input = if key == "startSceneId" {"sceneId"} else {"actionId"};
         if let Some(value) = payload.get(input) { options[key] = value.clone(); }
     }
-    fs::write(&request, serde_json::to_vec(&json!({"operation":"compile","project":project,"destination":work,"options":options})).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    // Serialize the validated value once. A separate fixed-name body keeps
+    // hashes independent of JS property enumeration and catches transport
+    // damage without cloning/escaping all media into the request envelope.
+    let body=serde_json::to_vec(document.value()).map_err(|e| e.to_string())?;
+    let digest=format!("{:x}",Sha256::digest(&body));
+    fs::write(job.join("document.json"),&body).map_err(|e|e.to_string())?;
+    fs::write(&request, serde_json::to_vec(&json!({"operation":"compile","destination":work,"options":options,
+        "validatedDocument":{"source":"istoriya-core","structureProtocol":STRUCTURE_PROTOCOL,"schema":document.schema().effective(),"sha256":digest,"bytes":body.len()}})).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     let mut command = Command::new(tools.runtime.join("node.exe"));
     tools.environment(&mut command, &job.join("compiler-saves"));
     command.current_dir(&tools.runtime).arg(tools.runtime.join("runtime/native-worker.mjs")).arg(&request).arg(&response);
@@ -211,13 +220,17 @@ impl WorkJob {
 pub fn execute(runtime: &Path, root: &Path, operation: &str, payload: &Value, output: &Path) -> Result<Value, String> {
     if !matches!(operation, "build" | "preview") { return Err("Неизвестная операция движка.".into()); }
     let project = &payload["project"]; crate::storage::validate(project)?;
+    // A real preflight before SDK generation or source emission. The borrowed
+    // model preserves the complete input, including unknown/legacy fields.
+    let document = ProjectDocument::validate(project).map_err(|e| e.to_string())?;
+    let document_stats = document.stats();
     let target = Target::parse(payload["platform"].as_str().unwrap_or("windows"))?;
     let tools = Tools::new(dunce::simplified(runtime), dunce::simplified(root))?;
     let job = if operation == "preview" { WorkJob::Preview(preview::Lease::new(&tools.root)?) }
         else { WorkJob::Build(tempfile::Builder::new().prefix("engine-").tempdir_in(&tools.root).map_err(|e| e.to_string())?) };
     let work = job.path().join("game-project"); fs::create_dir_all(&work).map_err(|e| e.to_string())?;
     let gui = prepare_gui(&tools, &job.path(), &work, project)?;
-    compile_sources(&tools, &job.path(), &work, project, payload, gui)?;
+    compile_sources(&tools, &job.path(), &work, &document, payload, gui)?;
     let saves = job.path().join("sdk-saves");
     let mut lint = tools.sdk_command(&saves); lint.arg(&work).arg("lint");
     process::run(&mut lint, &job.path(), "Проверка игры", TOOL_TIMEOUT)?;
@@ -230,7 +243,7 @@ pub fn execute(runtime: &Path, root: &Path, operation: &str, payload: &Value, ou
         let mut result = preview::launch(command, lease)?;
         result["projectDir"] = json!(work);
         result["sceneId"] = payload["sceneId"].clone();
-        result["engine"] = json!({"orchestrator":"rust","sourceEmitter":"javascript","previewLifetime":"rust"});
+        result["engine"] = json!({"orchestrator":"rust","sourceEmitter":"javascript","previewLifetime":"rust","projectModel":"rust","structureValidator":"rust","document":document_stats});
         return Ok(result);
     }
     let packages = job.path().join("packages"); fs::create_dir_all(&packages).map_err(|e| e.to_string())?;
@@ -248,7 +261,7 @@ pub fn execute(runtime: &Path, root: &Path, operation: &str, payload: &Value, ou
     let package = publish_package(&candidates[0], output)?;
     let size = fs::metadata(&package).map_err(|e| e.to_string())?.len();
     let mut result = json!({"platform":payload["platform"].as_str().unwrap_or("windows"),"packagePath":package,"size":size,
-        "engine":{"orchestrator":"rust","sourceEmitter":"javascript","guiGenerator":"rust","sdkRunner":"rust","isolatedPackageDiscovery":true}});
+        "engine":{"orchestrator":"rust","sourceEmitter":"javascript","guiGenerator":"rust","sdkRunner":"rust","isolatedPackageDiscovery":true,"projectModel":"rust","structureValidator":"rust","document":document_stats}});
     if let Some((key_dir, generated)) = key_info { result["keyDir"] = json!(key_dir); result["generatedKey"] = json!(generated); }
     // No nonexistent projectDir: successful build staging is intentionally
     // removed; only the published standalone package is the durable result.
@@ -258,6 +271,14 @@ pub fn execute(runtime: &Path, root: &Path, operation: &str, payload: &Value, ou
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rust_document_preflight_precedes_sdk_access_and_keeps_a_precise_action_address() {
+        let root=tempfile::tempdir().unwrap();
+        let project=json!({"schemaVersion":8,"meta":{"title":"QA"},"scenes":{"s":{"id":"s","title":"Первая встреча","actions":[{"id":"broken","type":null}]}}});
+        let error=execute(&root.path().join("missing-sdk"),root.path(),"build",&json!({"project":project}),&root.path().join("output")).unwrap_err();
+        assert!(error.contains("У действия не задан тип"));assert!(error.contains("Первая встреча"));assert!(error.contains("шаг 1"));
+        assert!(!root.path().join("temp").exists());assert!(!root.path().join("output").exists());
+    }
     #[test]
     fn all_existing_targets_keep_their_package_contract() {
         assert_eq!(Target::parse("windows").unwrap().suffix(false), "-win.zip");

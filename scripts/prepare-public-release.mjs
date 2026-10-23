@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { assertProjectShape } from '../runtime/project-format.mjs';
 
-// Explicit 0.2.35 supply list. No recursive copying of a release or QA directory.
+// Reviewed supply lists. No recursive copying of a release or QA directory.
 const args = process.argv.slice(2);
 function argument(name) {
   const i = args.indexOf(name);
@@ -23,7 +23,7 @@ async function hash(file) {
   return digest.digest('hex');
 }
 const pkg = await read('package.json');
-assert.equal(pkg.version, '0.2.35', 'Supply list must be reviewed for a new version');
+assert.ok(['0.2.35', '0.2.37'].includes(pkg.version), 'Supply list must be reviewed for a new version');
 assert.equal(execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim(), '', 'Commit source before preparing release');
 const accepted = await read(verification);
 const packaging = await read(path.join(release, 'packaging-manifest.json'));
@@ -41,8 +41,13 @@ for (const [name, digest] of Object.entries(runtime.files)) {
 for (const key of ['actualUiBuild', 'newProjectEmptyAfterBuild', 'freshNativeProcessReopen', 'poisonedLegacyBuilderAndGuiPassed', 'nativePreviewMainMenu', 'nativePreviewPersistentAcrossGeneratedJobs']) assert.equal(accepted[key], true, key);
 for (const key of ['ownerProfileChanged', 'osMouseAutomation', 'fullRustCompiler', 'fullRustRuntime', 'fullProductionAccepted']) assert.equal(accepted[key], false, key);
 for (const phase of Object.values(accepted.phases)) assert.equal(phase.exitCode, 0);
+if (pkg.version === '0.2.37') {
+  for (const key of ['legacyJsStructureValidatorDisabled', 'invalidRejectedBeforeSourceEmitter', 'sameLengthTransportDamageRejected', 'previewStagingRemovedAfterEachExit', 'localSaveMirrorsRetainedOutsideCache']) assert.equal(accepted[key], true, key);
+  assert.equal(accepted.documentParity.cases, 1320);
+  assert.equal(accepted.documentParity.passed, true);
+}
 const old = await read(path.join(previous, 'release-manifest.json'));
-assert.equal(old.version, '0.2.34');
+assert.equal(old.version, pkg.version === '0.2.35' ? '0.2.34' : '0.2.35');
 const copied = ['Istoriya-0.2.34-Manual.zip', 'Istoriya-0.2.34-guide.pdf', 'Istoriya-0.2.34-guide.html', 'tea-adventure.vnproject', 'tea-adventure-win.zip', 'tea-layered.vnproject', 'tea-interactive.vnproject'];
 const output = path.join(release, 'public');
 await fs.mkdir(output, { recursive: true });
@@ -75,7 +80,7 @@ for (const name of [packaging.installer, ...copied]) {
   try { await fs.copyFile(source, destination, constants.COPYFILE_EXCL); }
   catch (error) { if (error.code !== 'EEXIST') throw error; }
   assert.equal(await hash(destination), expected, `Refusing changed destination: ${name}`);
-  records.push({ name, bytes: (await fs.stat(destination)).size, sha256: expected, originVersion: inherited ? '0.2.34' : pkg.version });
+  records.push({ name, bytes: (await fs.stat(destination)).size, sha256: expected, originVersion: inherited ? (old.files.find(file => file.name === name)?.originVersion ?? old.version) : pkg.version });
 }
 const manifest = {
   version: pkg.version,
@@ -86,7 +91,8 @@ const manifest = {
   binarySha256: binaryHash, installerSha256: packaging.installerSha256,
   sourceHashes: accepted.sourceHashes,
   localAcceptance: Object.fromEntries(['jsTests', 'rustTests', 'sitesTests', 'runtimeModules', 'packagedCases', 'packagedAssertions', 'ordinaryGameStartups', 'actualUiBuild', 'newProjectEmptyAfterBuild', 'freshNativeProcessReopen', 'nativePreviewMainMenu', 'nativePreviewPersistentAcrossGeneratedJobs'].map(key => [key, accepted[key]])),
-  limitations: { installerSigned: false, cleanWindowsInstallationVerified: false, installerUpgradeVerified: false, hostedCiAccepted: false, fullRustCompiler: false, ownRustGameRuntime: false, fullProductionAccepted: false, androidAccepted: false, previewTempCleanupImplemented: false },
+  limitations: { installerSigned: false, cleanWindowsInstallationVerified: false, installerUpgradeVerified: false, hostedCiAccepted: false, fullRustCompiler: false, ownRustGameRuntime: false, fullProductionAccepted: false, androidAccepted: false, previewTempCleanupImplemented: pkg.version === '0.2.37' },
+  ...(pkg.version === '0.2.37' ? {documentParity: accepted.documentParity, rustCoreTests: accepted.rustCoreTests, nativeRustTests: accepted.nativeRustTests, previewStagingRemovedAfterEachExit: true, localSaveMirrorsRetainedOutsideCache: true} : {}),
   privacy: { rawQaProfilesIncluded: false, ownerProjectsIncluded: false, credentialsIncluded: false },
   manual: { version: '0.2.34', unchanged: true, pages: old.manual.pages, sections: old.manual.sections, distinctScreenshots: old.manual.distinctScreenshots },
   files: records,

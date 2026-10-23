@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {compileProject} from '../runtime/compiler.mjs';
 import {validateGameGui} from '../runtime/gui-template.mjs';
 import {createProject} from '../src/domain/projectFactory.js';
@@ -43,4 +44,33 @@ test('native emitter refuses legacy build/preview requests instead of silently o
       assert.equal(child.status,1);assert.match(JSON.parse(await fs.readFile(response,'utf8')).error,/только генерацию сценария/);
     }
   } finally {await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('native emitter requires an explicit core document contract, not just prepared GUI',async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'istoriya-emitter-unvalidated-'));
+  try{
+    for(const validatedDocument of [undefined,{source:'javascript',structureProtocol:1,schema:8},{source:'istoriya-core',structureProtocol:2,schema:8},{source:'istoriya-core',structureProtocol:1,schema:9},{source:'istoriya-core',structureProtocol:1,schema:8}]){
+      const request=path.join(root,'request.json'),response=path.join(root,'response.json');await fs.writeFile(request,JSON.stringify({operation:'compile',project:fixture(),options:{preparedGui},validatedDocument}));
+      const child=spawnSync(process.execPath,['runtime/native-worker.mjs',request,response],{encoding:'utf8',timeout:10000,windowsHide:true});assert.equal(child.status,1);assert.match(JSON.parse(await fs.readFile(response,'utf8')).error,/структурной проверки документа Rust/);
+    }
+  }finally{await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('native emitter verifies exact document bytes and does not read a project supplied in the envelope',async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'istoriya-emitter-integrity-'));
+  try{
+    const project=fixture(),body=Buffer.from(JSON.stringify(project)),request=path.join(root,'request.json'),response=path.join(root,'response.json'),document=path.join(root,'document.json');
+    const envelope={operation:'compile',project:{scenes:null},destination:path.join(root,'generated'),options:{preparedGui,sdkPath:path.join(root,'missing-sdk'),assetsRoot:path.resolve('public')},validatedDocument:{source:'istoriya-core',structureProtocol:1,schema:8,bytes:body.length,sha256:createHash('sha256').update(body).digest('hex')}};
+    await fs.writeFile(request,JSON.stringify(envelope));await fs.writeFile(document,body);
+    let child=spawnSync(process.execPath,['runtime/native-worker.mjs',request,response],{encoding:'utf8',timeout:10000,windowsHide:true});assert.equal(child.status,0,child.stderr);assert.ok(JSON.parse(await fs.readFile(response,'utf8')).result);
+    await fs.writeFile(document,Buffer.concat([body,Buffer.from(' ')]));
+    child=spawnSync(process.execPath,['runtime/native-worker.mjs',request,response],{encoding:'utf8',timeout:10000,windowsHide:true});assert.equal(child.status,1);assert.match(JSON.parse(await fs.readFile(response,'utf8')).error,/повреждён при передаче/);
+    const sameSize=Buffer.from(body.toString().replace('"schemaVersion":8','"schemaVersion":7'));assert.equal(sameSize.length,body.length);assert.notDeepEqual(sameSize,body);await fs.writeFile(document,sameSize);
+    child=spawnSync(process.execPath,['runtime/native-worker.mjs',request,response],{encoding:'utf8',timeout:10000,windowsHide:true});assert.equal(child.status,1);assert.match(JSON.parse(await fs.readFile(response,'utf8')).error,/повреждён при передаче/);
+  }finally{await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('public compiler ignores attempted structural-validation bypass flags',async()=>{
+  const project=fixture();Object.values(project.scenes)[0].actions=[{id:'broken',type:null}];
+  await assert.rejects(compileProject(project,'unused-output',{preparedGui,structuralValidation:'rust',validatedDocument:{source:'istoriya-core',structureProtocol:1,schema:8}}),/У действия не задан тип/);
 });

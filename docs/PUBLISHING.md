@@ -4,7 +4,7 @@
 
 ## Структура
 
-- `src/`, `src-tauri/`, `runtime/` — редактор и движок сборки.
+- `src/`, `src-tauri/`, `crates/istoriya-core/`, `runtime/` — редактор, независимое Rust-ядро и движок сборки.
 - `public/`, `examples/` — переиспользуемые ресурсы и исходники примеров.
 - `tests/`, `scripts/` — проверки, сборка и подготовка поставки.
 - `installer/` — Inno Setup.
@@ -30,6 +30,27 @@ node scripts/prepare-public-release.mjs --directory D:/Istoriya-Releases/0.2.35 
 ```
 
 Команда сверяет версию, SHA EXE, исходники конвейера и все runtime-модули с проверкой; копирует только разрешённые файлы. Руководство и примеры сверяются с SHA предыдущей поставки, переносимые проекты проверяются на структуру и локальные пути. Готовая папка `public/` содержит только публичные файлы, сокращённый манифест без raw QA-путей и `SHA256SUMS.txt`. При другом содержимом существующего файла команда отказывает, а не перезаписывает его. Исходное дерево должно быть чистым и закоммиченным.
+
+## Подготовка файлов версии 0.2.37
+
+Используйте актуальный манифест проверки EXE 0.2.37, а не отчёт 0.2.35/0.2.36:
+
+```powershell
+node scripts/prepare-public-release.mjs --directory D:/Istoriya-Releases/0.2.37 --verification D:/IstoriyaQA/document-037/engine-verification-manifest.json --previous D:/Istoriya-Releases/0.2.35/public
+```
+
+Для этой версии дополнительно обязательны корпус из 1320 документов, отключённый JS-структурный валидатор в QA-копии, отказ до генератора на неверном документе, отказ при повреждении передачи той же длины и сохранение игровых данных после очистки preview. Примеры и руководство наследуются из 0.2.35 с исходным происхождением 0.2.34; старый установщик не копируется.
+
+После проверки удалённой истории отправьте текущую ветку и `main` без force, создайте аннотированный `v0.2.37` на том же коммите. Для публикации есть скрипт с раздельными шагами:
+
+```powershell
+powershell -NoProfile -File scripts/publish-github-release.ps1 -Directory D:/Istoriya-Releases/0.2.37/public -Mode Create
+powershell -NoProfile -File scripts/publish-github-release.ps1 -Directory D:/Istoriya-Releases/0.2.37/public -Mode Upload
+powershell -NoProfile -File scripts/publish-github-release.ps1 -Directory D:/Istoriya-Releases/0.2.37/public -Mode Verify
+powershell -NoProfile -File scripts/publish-github-release.ps1 -Directory D:/Istoriya-Releases/0.2.37/public -Mode Publish
+```
+
+Скрипт сверяет коммит, `main`, тег и SHA-256 каждого asset на GitHub. Использует существующую авторизацию `gh` через `GH_TOKEN` либо настроенный Git credential helper; токен не печатает и не сохраняет. `Upload` допустим только для draft, `Publish` — после совпадения всех сумм. При сетевой неопределённости выполните `Status`, затем сопоставьте уже существующие файлы; не удаляйте и не заменяйте опубликованную поставку.
 
 ## Git и GitHub Release
 

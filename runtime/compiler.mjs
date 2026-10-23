@@ -554,6 +554,16 @@ function createAndroidConfig(project) {
 
 export async function compileProject(project, destination, options) {
   assertProjectShape(project);
+  return emitProject(project, destination, options);
+}
+
+// Separate entry point for the private native-worker protocol. The public API
+// cannot bypass validation through an options flag supplied by a caller.
+export async function compileRustValidatedProject(project, destination, options) {
+  return emitProject(project, destination, options);
+}
+
+async function emitProject(project, destination, options) {
   const uiErrors=uiLayoutProblems(project);if(uiErrors.length)throw Error(uiErrors.map(e=>e.message).join(' '));
   if (!project?.meta || !project?.scenes) throw new Error("Файл проекта повреждён или имеет неизвестный формат.");
   if (!destination || path.resolve(destination) === path.parse(path.resolve(destination)).root) throw new Error("Небезопасная папка назначения.");

@@ -23,9 +23,11 @@ await fs.symlink(path.join(shipped,'renpy-sdk'),path.join(runtime,'renpy-sdk'),'
 await fs.writeFile(path.join(runtime,'runtime/builder.mjs'),"throw Error('QA: legacy Node build orchestration must not run');\n");
 await fs.copyFile(path.join(runtime,'runtime/gui-template.mjs'),path.join(runtime,'runtime/gui-template-real.mjs'));
 await fs.writeFile(path.join(runtime,'runtime/gui-template.mjs'),"export {validateGameGui} from './gui-template-real.mjs';\nexport async function generateGameGui(){throw Error('QA: Node must not launch SDK GUI generation');}\n");
+await fs.writeFile(path.join(runtime,'runtime/project-format.mjs'),"export function assertProjectShape(){throw Error('QA: JS must not perform native structural preflight');}\n");
 await fs.copyFile(path.join(runtime,'runtime/native-worker.mjs'),path.join(runtime,'runtime/source-emitter-real.mjs'));
 const operations=path.join(root,'emitter-operations.jsonl');
-await fs.writeFile(path.join(runtime,'runtime/native-worker.mjs'),`import fs from 'node:fs/promises';\nconst request=JSON.parse(await fs.readFile(process.argv[2],'utf8'));\nawait fs.appendFile(${JSON.stringify(operations)},JSON.stringify({operation:request.operation,preparedGui:!!request.options?.preparedGui})+'\\n');\nawait import('./source-emitter-real.mjs');\n`);
+const tamperMarker=path.join(root,'tamper-next-document');
+await fs.writeFile(path.join(runtime,'runtime/native-worker.mjs'),`import fs from 'node:fs/promises';\nimport path from 'node:path';\nconst request=JSON.parse(await fs.readFile(process.argv[2],'utf8'));\nlet tampered=false;\nif(await fs.access(${JSON.stringify(tamperMarker)}).then(()=>true,()=>false)){await fs.unlink(${JSON.stringify(tamperMarker)});const file=path.join(path.dirname(process.argv[2]),'document.json');const raw=await fs.readFile(file,'utf8');const changed=raw.replace('"schemaVersion":8','"schemaVersion":7');if(raw===changed||Buffer.byteLength(raw)!==Buffer.byteLength(changed))throw Error('QA tamper fixture did not change exactly one byte');await fs.writeFile(file,changed);tampered=true;}\nawait fs.appendFile(${JSON.stringify(operations)},JSON.stringify({operation:request.operation,preparedGui:!!request.options?.preparedGui,documentIntegrity:!!request.validatedDocument?.sha256,tampered})+'\\n');\nawait import('./source-emitter-real.mjs');\n`);
 
 async function command(name,executable,args,expected=0){
   let output='';const child=spawn(executable,args,{windowsHide:true,env:{...process.env,TEMP:path.join(root,'temp'),TMP:path.join(root,'temp')}});
@@ -43,6 +45,7 @@ const stale=path.join(packages,'old-win.zip');await fs.writeFile(stale,'INTENTIO
 await command('native-first',exe,['--verify-native',fixture,output]);
 const first=(await json(path.join(output,'result.json'))).build;
 assert.equal(first.engine.orchestrator,'rust');assert.equal(first.engine.sourceEmitter,'javascript');
+assert.equal(first.engine.projectModel,'rust');assert.equal(first.engine.structureValidator,'rust');assert.equal(first.engine.document.scenes,3);
 assert.notEqual(path.resolve(first.packagePath),stale);const firstDigest=await digest(first.packagePath);
 await command('native-repeat',exe,['--verify-native',fixture,output]);
 const second=(await json(path.join(output,'result.json'))).build;
@@ -53,8 +56,13 @@ const bad=path.join(root,'broken.vnproject');await fs.writeFile(bad,JSON.stringi
 await command('native-invalid',exe,['--verify-native',bad,output],1);
 assert.match(await fs.readFile(path.join(output,'error.txt'),'utf8'),/У действия не задан тип/);
 assert.deepEqual(await fs.readdir(packages),before);assert.equal(await digest(first.packagePath),firstDigest);
-const emitted=(await fs.readFile(operations,'utf8')).trim().split('\n').map(JSON.parse);
-assert.equal(emitted.length,3);for(const entry of emitted){assert.equal(entry.operation,'compile');assert.equal(entry.preparedGui,true);}
+let emitted=(await fs.readFile(operations,'utf8')).trim().split('\n').map(JSON.parse);
+assert.equal(emitted.length,2,'Invalid structure must fail in Rust before source emission');
+await fs.writeFile(tamperMarker,'Corrupt only own next staged QA document');
+await command('native-corrupt-transport',exe,['--verify-native',fixture,output],1);
+assert.match(await fs.readFile(path.join(output,'error.txt'),'utf8'),/повреждён при передаче/);assert.deepEqual(await fs.readdir(packages),before);assert.equal(await digest(first.packagePath),firstDigest);
+emitted=(await fs.readFile(operations,'utf8')).trim().split('\n').map(JSON.parse);
+assert.equal(emitted.length,3);assert.equal(emitted[2].tampered,true);for(const entry of emitted){assert.equal(entry.operation,'compile');assert.equal(entry.preparedGui,true);assert.equal(entry.documentIntegrity,true);}
 
 const testcases=path.join(root,'testcases.rpy');
 await fs.writeFile(testcases,`testsuite global:
@@ -87,7 +95,7 @@ for(const startup of [false,true]){
   const directory=result.split(/\r?\n/).find(l=>l.startsWith('Runtime QA: '))?.slice(12);assert.ok(directory);
   const checked=await json(path.join(directory,'result.json'));assert.equal(checked.passed,true);assert.equal(checked.runtimeException,false);games.push(checked);
 }
-const report={passed:true,version:JSON.parse(await fs.readFile('package.json','utf8')).version,root,executableSha256:await digest(exe),legacyNodeBuilderDisabled:true,nodeGuiGeneratorDisabled:true,sourceEmitterOperations:emitted,stalePackageRejected:true,existingPackagePreserved:true,invalidProjectRejected:true,first,second,games,ownerProfileChanged:false,osMouseAutomation:false,androidVerified:false,fullRustCompiler:false,fullProductionAccepted:false};
+const report={passed:true,version:JSON.parse(await fs.readFile('package.json','utf8')).version,root,executableSha256:await digest(exe),legacyNodeBuilderDisabled:true,nodeGuiGeneratorDisabled:true,legacyJsStructureValidatorDisabled:true,invalidRejectedBeforeSourceEmitter:true,sameLengthTransportDamageRejected:true,sourceEmitterOperations:emitted,stalePackageRejected:true,existingPackagePreserved:true,invalidProjectRejected:true,first,second,games,ownerProfileChanged:false,osMouseAutomation:false,androidVerified:false,fullRustCompiler:false,fullProductionAccepted:false};
 await fs.writeFile(path.join(root,'rust-engine-report.json'),JSON.stringify(report,null,2));
 await fs.writeFile('.artifacts/rust-engine-location.json',JSON.stringify({root,reportPath:path.join(root,'rust-engine-report.json')},null,2));
 console.log(JSON.stringify({passed:true,root,sourceEmitterOperations:emitted.length,scope:'Actual Rust EXE pipeline; Windows package and game; not full Rust compiler or production acceptance'}));

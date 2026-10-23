@@ -25,7 +25,7 @@ for (const name of files) {
   if (!/\.(?:js|jsx|mjs|rs|json|md|ya?ml|ps1|iss|toml|html|css|py|lock)$/i.test(name)) continue;
   const content = await fs.readFile(name, 'utf8');
   if (/(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|sk-(?:proj-)?[A-Za-z0-9_-]{35,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/.test(content)) problems.push(`Potential credential in ${name}`);
-  if (['README.md', 'PROJECT_MAP.md', 'docs/README.md', 'docs/INSTALL.md', 'docs/DEVELOPMENT.md', 'docs/PUBLISHING.md', 'docs/releases/0.2.35.md'].includes(name)) {
+  if (['README.md', 'PROJECT_MAP.md', 'docs/README.md', 'docs/INSTALL.md', 'docs/DEVELOPMENT.md', 'docs/PUBLISHING.md'].includes(name) || /^docs\/releases\/[^/]+\.md$/.test(name)) {
     for (const match of content.matchAll(/\]\(([^)]+)\)/g)) {
       const href = match[1];
       if (/^(?:https?:|#)/.test(href)) continue;

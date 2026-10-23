@@ -21,4 +21,5 @@ docs/audit/
 design/*.png
 *.tsbuildinfo
 src-tauri/target/
+crates/*/target/
 src-tauri/gen/

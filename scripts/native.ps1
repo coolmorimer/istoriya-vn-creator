@@ -25,7 +25,13 @@ try {
     }
   }
   if ($Mode -in 'test','check') {
-    if($Mode -eq 'test'){& cargo test --release --locked --features tauri/custom-protocol --manifest-path src-tauri/Cargo.toml}else{& cargo check --locked --manifest-path src-tauri/Cargo.toml}
+    if($Mode -eq 'test'){
+      & cargo test --release --locked --manifest-path crates/istoriya-core/Cargo.toml --target-dir src-tauri/target
+      if($LASTEXITCODE){throw 'Rust core tests failed'}
+      node scripts/verify-document-parity.mjs --use-native-target
+      if($LASTEXITCODE){throw 'Rust/JS document parity failed'}
+      & cargo test --release --locked --features tauri/custom-protocol --manifest-path src-tauri/Cargo.toml
+    }else{& cargo check --locked --manifest-path src-tauri/Cargo.toml}
   } else {
     if ($Mode -eq 'dev') { node scripts/prepare-native.mjs; if($LASTEXITCODE){throw 'Native resources failed'} }
     if($Mode -eq 'build') { & npx tauri build --no-bundle } else { & npx tauri dev }

@@ -2,6 +2,8 @@
 
 ## Publication direction — current request
 
+- 2026-10-23 latest owner request authorizes committing/pushing the intended current changes and publishing a new 0.2.37 beta installer with clear structure, description and instructions. Verify the current binary and package; retain older tags/assets unchanged. This does not authorize publishing owner projects, credentials, raw QA profiles or design-qa.md, or claiming R2–R8 complete.
+
 - The owner explicitly requests commit/push of all intended source changes and a release installer with repository structure, description and instructions. Publish 0.2.35 as a beta from the verified Rust-orchestration milestone; this supersedes the development iteration's no-automatic-publication restriction only for this requested release. Keep 0.2.34 immutable. Never publish owner projects, credentials, raw QA profiles or design-qa.md; never claim the transitional compiler/runtime is a completed Rust engine.
 
 ## Rust engine completion direction — 2026-10-23
