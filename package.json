@@ -1,6 +1,6 @@
 {
   "name": "vn-creator",
-  "version": "0.2.34",
+  "version": "0.2.35",
   "description": "Визуальный конструктор новелл на Ren'Py без программирования",
   "author": "История",
   "private": true,
@@ -33,6 +33,7 @@
     "verify:layers": "node scripts/verify-visual-order.mjs",
     "verify:keyframes": "node scripts/verify-keyframes.mjs",
     "verify:rpg": "node scripts/verify-rpg.mjs",
+    "verify:rust-engine": "node scripts/verify-rust-engine.mjs",
     "verify:props": "node scripts/verify-prop-interactions.mjs",
     "verify:logic": "node scripts/verify-game-logic.mjs",
     "build:demo:win": "node scripts/build-demo-win.mjs",

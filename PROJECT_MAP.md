@@ -11,6 +11,8 @@
 | Путь | Назначение |
 | --- | --- |
 | `src-tauri/` | Основная нативная оболочка Rust/Tauri, файлы, диалоги, окно и запуск компилятора |
+| `src-tauri/src/engine/build.rs`, `process.rs` | Rust-конвейер build/preview: официальный GUI, контроль SDK-процессов, traceback/timeout, изолированный пакет и сохранение без перезаписи |
+| `scripts/verify-rust-engine.mjs`, `tests/native-emitter.test.mjs` | Реальная EXE-проверка при отключённом старом Node-сборщике и контракт оставшегося генератора исходников |
 | `src-tauri/src/diagnostics.rs`, `diagnostics_system.rs`, `src/platform/diagnostics.js`, `src/components/Diagnostics.jsx` | Ограниченный локальный журнал, безопасный отчёт, Win32 clipboard/папка, явные QA receipts, независимость от project/error boundary |
 | `src/domain/dialogFocus.js`, `tests/diagnostics.test.mjs`, `scripts/verify-native-diagnostics.mjs` | Реальная видимость закрытых details, async-focus, приватность/очередь и native-доказательства отказов/перезапуска |
 | `src/platform/desktop.js` | Асинхронный адаптер нативного API, сохранение и закрытие |
@@ -37,7 +39,7 @@
 | `src/platform/nativeError.js` | Единый native caller, сохраняющий сообщения об ошибках |
 | `scripts/verify-native-author-workflow.mjs` | Дисковая/portable-проверка единого авторского пути и testcase готовой игры |
 | `runtime/interactions.mjs`, `runtime/interaction-script.mjs`, `src/components/PropInteractionFields.jsx`, `src/components/PreviewGameplay.jsx` | Исполнение и no-code правка реакций/голоса/SFX, доступные цели применения из инвентаря |
-| `runtime/native-worker.mjs` | Временный Node worker существующего компилятора Ren'Py |
+| `runtime/native-worker.mjs` | Переходный генератор исходников; нативные build/preview и запуск SDK выполняет Rust |
 | `scripts/build-native-installer.ps1`, `installer/istoriya-rust.iss` | Rust-установщик Inno Setup |
 | `examples/tea-with-goblins/` | Полный сценарий, раскадровка и редактируемая текстовая постановка |
 | `src/App.jsx` | Главная страница, ресурсы, редактор сцен и инспектор |

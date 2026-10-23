@@ -35,6 +35,9 @@ impl QaProfile {
  pub fn prepare_environment(&self) {
     // Child-process environment only: no registry or system settings are changed.
     std::env::set_var("WEBVIEW2_USER_DATA_FOLDER",self.webview());
+    // A native preview is still a real Ren'Py game. QA must never initialize
+    // its save/preferences state in the owner's ordinary Ren'Py directory.
+    std::env::set_var("RENPY_PATH_TO_SAVES",dunce::simplified(&self.workspace()).join("game-preview-saves"));
  }
 }
 

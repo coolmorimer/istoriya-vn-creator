@@ -1,5 +1,10 @@
 # Production editor instructions
 
+## Rust engine completion direction — 2026-10-23
+
+- The active goal is the full previously specified no-code novel engine, not another narrower beta. Move native engine/orchestration, project model, validation and compiler responsibilities to Rust with executable parity checks. The final own game runtime is also Rust, not merely a Rust shell emitting Python; retain Ren'Py export/game compatibility for old projects and saves. Preserve the entire requirements matrix, layered authoring, RPG, camera, keyframes, UI customization and independent saves. React remains the no-code editor UI; do not call transitional JS emission or Ren'Py-only playback a finished Rust engine.
+- Start by making the real native build/preview route Rust-owned: official GUI generation, supervised SDK processes, lint, isolated packaging, safe publication and Android signing-key retention. A fake SDK test is a process-contract test, never proof of an exported game. Validate the actual EXE and produced Windows game on owned QA copies without OS mouse input or owner-profile changes. The 0.2.34 release remains untouched; do not automatically publish every development iteration.
+
 ## Publication direction — 2026-10-21
 
 - The owner explicitly authorizes committing/pushing the completed changes and publishing the 0.2.34 Windows installer with clear repository structure and instructions. This supersedes the earlier local-only publication restriction for this release. Preserve the beta label and all unverified acceptance gates; do not change account billing or claim hosted CI passed.

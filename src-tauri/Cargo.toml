@@ -1,6 +1,6 @@
 [package]
 name = "istoriya"
-version = "0.2.34"
+version = "0.2.35"
 edition = "2021"
 description = "История — конструктор визуальных новелл"
 
@@ -18,6 +18,9 @@ sha2 = "0.10"
 url = "2"
 dunce = "1"
 tempfile = "3"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
 
 [profile.release]
 strip = true

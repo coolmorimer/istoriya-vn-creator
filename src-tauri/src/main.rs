@@ -4,7 +4,8 @@ mod qa_profile;
 mod diagnostics;
 mod diagnostics_system;
 mod profile;
-use std::{path::PathBuf, sync::{Arc, Mutex}, process::Command};
+mod engine;
+use std::{path::PathBuf, sync::{Arc, Mutex}};
 use serde_json::{json, Value};
 use tauri::{Manager, State};
 use storage::Workspace;
@@ -45,35 +46,13 @@ mod build_qa_tests {
 }
 
 fn compiler(runtime: &PathBuf, root: &PathBuf, operation: &str, payload: &Value, target_output:Option<PathBuf>) -> Result<Value,String> {
-    // Tauri may return verbatim Windows paths. Node's main-module realpath
-    // rejects \\?\E:\... with EISDIR before our worker even starts.
-    // Simplify only equivalent paths; preserve namespaces with special meaning.
-    let runtime=dunce::simplified(runtime);let root=dunce::simplified(root);
-    let project=&payload["project"];
-    storage::validate(project)?;
+    storage::validate(&payload["project"])?;
     let platform=payload["platform"].as_str().unwrap_or("windows");
     if !["windows","linux","macos","android"].contains(&platform) { return Err("Неизвестная платформа сборки".into()); }
     let output=if let Some(output)=target_output {dunce::simplified(&output).to_path_buf()} else if operation=="build" {
         match rfd::FileDialog::new().set_title("Папка готовой игры").pick_folder() { Some(p)=>p,None=>return Ok(json!({"canceled":true})) }
     } else {root.join("preview")};
-    let job=tempfile::Builder::new().prefix("job-").tempdir_in(root).map_err(|e|e.to_string())?;
-    let request=job.path().join("request.json");let response=job.path().join("response.json");
-    let work=job.path().join("game-project");
-    let mut options=json!({"sdkPath":runtime.join("renpy-sdk"),"assetsRoot":runtime.join("public"),"workDir":work,"outputDir":output,"androidKeyDir":root.join("android-keys").join(storage::safe_id(project))});
-    if let Some(v)=payload.get("sceneId") {options["startSceneId"]=v.clone();}
-    if let Some(v)=payload.get("actionId") {options["startActionId"]=v.clone();}
-    if let Ok(java)=std::env::var("JAVA_HOME") {options["javaHome"]=json!(java);}
-    std::fs::write(&request,serde_json::to_vec(&json!({"operation":operation,"platform":platform,"project":project,"options":options})).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
-    let temporary=root.join("temp");std::fs::create_dir_all(&temporary).map_err(|e|e.to_string())?;
-    let mut cmd=Command::new(runtime.join("node.exe"));cmd.current_dir(runtime).env("TEMP",&temporary).env("TMP",&temporary);
-    cmd.arg(runtime.join("runtime/native-worker.mjs")).arg(&request).arg(&response);
-    #[cfg(windows)] {use std::os::windows::process::CommandExt;cmd.creation_flags(0x08000000);}
-    let output=cmd.output().map_err(|e|format!("Не удалось запустить компонент сборки: {e}"))?;
-    let result:Value=serde_json::from_slice(&std::fs::read(&response).map_err(|_|String::from_utf8_lossy(&output.stderr).to_string())?).map_err(|e|e.to_string())?;
-    if let Some(error)=result["error"].as_str(){return Err(error.into());}
-    // RenPy preview is a detached process and still needs its generated directory.
-    if operation=="preview" {let _=job.keep();}
-    Ok(result["result"].clone())
+    engine::execute(runtime, root, operation, payload, &output)
 }
 
 #[tauri::command]

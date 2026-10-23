@@ -10,7 +10,7 @@ import {gameUi,uiResourceIds,uiLayoutProblems} from './game-ui.mjs';
 import {gameUiScript} from './game-ui-script.mjs';
 import {AUDIO_CHANNELS,audioVolume,audioFade,voiceFilename} from './audio-model.mjs';
 import {renpyActorTransform,renpyFloat} from './renpy-transform.mjs';
-import {generateGameGui} from './gui-template.mjs';
+import {generateGameGui,validateGameGui} from './gui-template.mjs';
 import {animationSettings,animationEnd,renpyAnimationLines} from './character-animation.mjs';
 import { textAppearance } from './text-style.mjs';
 import {motionDuration,motionSample,renpyMotionLines,motionWarperScript} from './keyframes.mjs';
@@ -566,7 +566,7 @@ export async function compileProject(project, destination, options) {
   await Promise.all([fs.mkdir(generatedImagesDir, { recursive: true }), fs.mkdir(generatedAssetsDir, { recursive: true })]);
   const width = Number(project.meta.resolution?.width) || 1920;
   const height = Number(project.meta.resolution?.height) || 1080;
-  const generatedGui=await generateGameGui(sdkPath,gameDir,width,height);
+  const generatedGui=options.preparedGui!=null?validateGameGui(options.preparedGui):await generateGameGui(sdkPath,gameDir,width,height);
   await fs.writeFile(path.join(gameDir, "gui.rpy"), generatedGui.gui, "utf8");
   // Overwrite legacy compiler-owned support and invalidate its old bytecode.
   // Never ship SDK GUI regeneration/imports into a standalone game.
